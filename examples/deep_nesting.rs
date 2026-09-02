@@ -1,3 +1,8 @@
+//! # XML Deep Nesting & Security Limit Example
+//!
+//! Demonstrates configuring `ParseOptions::max_nesting_depth` to protect applications
+//! against stack overflow and DoS attacks from deeply nested element structures.
+
 use xml_lib::{parse_with_options, ParseOptions};
 
 fn main() {
@@ -14,15 +19,19 @@ fn main() {
         xml.push_str(&format!("</level{i}>"));
     }
 
+    // Configure generous depth limit (max_nesting_depth = 100)
     let mut options = ParseOptions::default();
     options.max_nesting_depth = 100;
 
     match parse_with_options(&xml, options) {
-        Ok(doc) => println!("Successfully parsed document with nesting depth {depth}. Total nodes: {}", doc.len()),
+        Ok(doc) => println!(
+            "Successfully parsed document with nesting depth {depth}. Total nodes: {}",
+            doc.len()
+        ),
         Err(err) => eprintln!("Parse failed: {err}"),
     }
 
-    // Now attempt with lower depth limit
+    // Configure strict depth limit (max_nesting_depth = 20)
     let mut strict_options = ParseOptions::default();
     strict_options.max_nesting_depth = 20;
 

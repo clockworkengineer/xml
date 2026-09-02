@@ -1,8 +1,14 @@
+//! # Algorithmic Fibonacci Document Generation Example
+//!
+//! Demonstrates programmatically populating an XML DOM tree in a loop to generate
+//! structured numerical XML documents at runtime.
+
 use xml_lib::{stringify, Attribute, Document, NodeKind};
 
 fn main() {
     println!("--- Fibonacci XML Document Generation Example ---");
 
+    // Instantiate empty arena Document
     let mut doc = Document::new();
     let root_elem_id = doc.add_node(NodeKind::Element {
         name: "fibonacci_sequence".into(),
@@ -14,6 +20,7 @@ fn main() {
     let mut a: u64 = 0;
     let mut b: u64 = 1;
 
+    // Generate 15 Fibonacci terms as XML elements
     for index in 0..15 {
         let term_elem_id = doc.add_node(NodeKind::Element {
             name: "term".into(),
@@ -28,5 +35,6 @@ fn main() {
         b = next;
     }
 
+    // Output formatted XML string
     println!("Generated Fibonacci XML Output:\n{}", stringify(&doc));
 }

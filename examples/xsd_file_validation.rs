@@ -1,3 +1,8 @@
+//! # XSD Complex Type Sequence Example
+//!
+//! Demonstrates validating complex type sequence elements (`<xs:complexType>`, `<xs:sequence>`)
+//! using `XsdValidator` and `XmlValidator`.
+
 use xml_lib::{parse, XsdValidator};
 
 fn main() {
@@ -13,10 +18,14 @@ fn main() {
   </xs:complexType>
 </xs:schema>"#;
 
+    // Parse XSD schema with complex type sequences
     let mut validator = XsdValidator::new();
     validator.parse_schema(schema).unwrap();
 
+    // Parse instance document
     let doc = parse("<note><to>Alice</to><from>Bob</from></note>").unwrap();
+
+    // Validate using the XmlValidator trait interface
     match validator.validate(&doc) {
         Ok(_) => println!("Complex sequence validation passed!"),
         Err(err) => eprintln!("Validation failed: {err}"),

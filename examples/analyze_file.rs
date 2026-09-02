@@ -1,3 +1,8 @@
+//! # XML Analysis Example
+//!
+//! Demonstrates iterating over DOM arena nodes (`doc.nodes()`), categorizing node variants
+//! (`Element`, `Text`, `Comment`), and counting metrics across a document structure.
+
 use xml_lib::{parse, NodeKind};
 
 fn main() {
@@ -15,12 +20,14 @@ fn main() {
   </book>
 </catalog>"#;
 
+    // Parse XML string into DOM arena
     let doc = parse(xml).expect("Parse clean");
 
     let mut element_count = 0;
     let mut text_count = 0;
     let mut comment_count = 0;
 
+    // Traversal across all nodes in the Document arena
     for node in doc.nodes() {
         match &node.kind {
             NodeKind::Element { name, attributes } => {

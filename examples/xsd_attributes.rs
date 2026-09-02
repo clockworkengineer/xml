@@ -1,3 +1,8 @@
+//! # XSD Attribute & Type Constraint Example
+//!
+//! Demonstrates parsing XSD attribute declarations (`xs:attribute`) and validating
+//! attribute primitive data types (`xs:integer`) using `XsdValidator` and `XmlValidator`.
+
 use xml_lib::{parse, XsdValidator};
 
 fn main() {
@@ -11,14 +16,23 @@ fn main() {
   </xs:element>
 </xs:schema>"#;
 
+    // Parse XSD schema definition
     let mut validator = XsdValidator::new();
     validator.parse_schema(schema).unwrap();
 
+    // Valid XML instance (integer attribute value id="42")
     let valid_xml = r#"<person id="42"/>"#;
     let doc_valid = parse(valid_xml).unwrap();
-    println!("Valid XML attribute validation: {:?}", validator.validate(&doc_valid));
+    println!(
+        "Valid XML attribute validation: {:?}",
+        validator.validate(&doc_valid)
+    );
 
+    // Invalid XML instance (non-integer string attribute value id="abc")
     let invalid_xml = r#"<person id="abc"/>"#;
     let doc_invalid = parse(invalid_xml).unwrap();
-    println!("Invalid attribute integer validation error: {:?}", validator.validate(&doc_invalid));
+    println!(
+        "Invalid attribute integer validation error: {:?}",
+        validator.validate(&doc_invalid)
+    );
 }

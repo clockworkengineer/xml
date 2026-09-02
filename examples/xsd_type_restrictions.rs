@@ -1,3 +1,8 @@
+//! # XSD Simple Type Restriction Facets Example
+//!
+//! Demonstrates validating numeric simple type restriction facets (`minInclusive`, `maxInclusive`)
+//! using `XsdValidator` and `XmlValidator`.
+
 use xml_lib::{parse, XsdValidator};
 
 fn main() {
@@ -14,12 +19,21 @@ fn main() {
   </xs:element>
 </xs:schema>"#;
 
+    // Parse XSD schema definition
     let mut validator = XsdValidator::new();
     validator.parse_schema(schema).unwrap();
 
+    // Valid XML instance (<age>25</age>)
     let doc_valid = parse("<age>25</age>").unwrap();
-    println!("Age 25 validation result: {:?}", validator.validate(&doc_valid));
+    println!(
+        "Age 25 validation result: {:?}",
+        validator.validate(&doc_valid)
+    );
 
+    // Invalid XML instance (<age>150</age> - exceeds maxInclusive limit of 120)
     let doc_invalid = parse("<age>150</age>").unwrap();
-    println!("Age 150 validation error: {:?}", validator.validate(&doc_invalid));
+    println!(
+        "Age 150 validation error: {:?}",
+        validator.validate(&doc_invalid)
+    );
 }

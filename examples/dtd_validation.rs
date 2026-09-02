@@ -1,3 +1,8 @@
+//! # XML DTD Validation Example
+//!
+//! Demonstrates validating document structures against DTD content models
+//! (`<!ELEMENT>`) and required attribute rules (`<!ATTLIST ... #REQUIRED>`) using `XmlValidator`.
+
 use xml_lib::{parse, DtdValidator};
 
 fn main() {
@@ -18,14 +23,17 @@ fn main() {
   <body/>
 </note>"#;
 
+    // Parse valid document with inline DTD subset
     let doc = parse(xml_valid).expect("Parse clean");
     let validator = DtdValidator::new();
 
+    // Validate using the XmlValidator trait interface
     match validator.validate(&doc) {
         Ok(_) => println!("DTD Validation passed clean!"),
         Err(err) => eprintln!("DTD Validation failed: {err}"),
     }
 
+    // Invalid XML document (missing required #REQUIRED 'category' attribute)
     let xml_invalid = r#"<?xml version="1.0"?>
 <!DOCTYPE note [
   <!ATTLIST note category CDATA #REQUIRED>

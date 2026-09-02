@@ -13,6 +13,6 @@ pub trait XmlValidator {
     /// Validates an in-memory DOM [`Document`] against the schema or ruleset.
     ///
     /// # Errors
-    /// Returns [`XmlError::ValidationError`](crate::XmlError::ValidationError) if validation fails.
+    /// Returns [`XmlError`](crate::XmlError) if validation fails.
     fn validate(&self, doc: &Document) -> Result<()>;
 }

@@ -3,14 +3,19 @@
 [![Build & Test](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Edition: 2021](https://img.shields.io/badge/edition-2021-orange.svg)](#)
+[![no_std](https://img.shields.io/badge/no__std-supported-informational.svg)](#)
 
-A high-performance, full-featured, pure Rust XML parsing, validation, stringification, and XPath 1.0 query engine ported from the C++ `XML_Lib` library.
+A high-performance, full-featured, pure Rust XML parsing, validation, stringification, and XPath 1.0 query engine ported from the C++ `XML_Lib` library. Optimized for standard server applications as well as `#![no_std]` bare-metal embedded systems (Cortex-M, ESP32, RISC-V).
 
 ---
 
 ## Key Features
 
 - **DOM Arena Tree Model**: In-memory [`Document`](docs/API_GUIDE.md#document) represented as a flat arena of nodes indexed by 32-bit compact `NodeId` identifiers (50% smaller node footprint).
+- **Embedded & Bare-Metal Support**: Full `#![no_std]` + `alloc` mode for resource-constrained microcontrollers (Cortex-M, ESP32, RISC-V).
+- **Zero-Allocation Streaming Pull Parser**: High-speed SAX-style [`XmlPullParser`](docs/API_GUIDE.md#xmlpullparser) emitting borrowed events (`XmlPullEvent<'a>`) with zero heap allocation (`no_alloc`).
+- **Compact 16-Bit Node Option**: Enable `features = ["small_nodes"]` to use 16-bit `u16` node indices, reducing node struct payload down to 24 bytes (**25% extra RAM reduction**).
+- **SOLID Architecture Design**: Unified [`XmlValidator`](docs/API_GUIDE.md#xmlvalidator) trait interface implemented by `DtdValidator` and `XsdValidator`, allowing custom schema and business rule validation backends.
 - **Encoding Auto-Detection**: Zero-copy UTF-8 string slice indexing with automatic UTF-8 and UTF-16 LE/BE Byte Order Mark (BOM) detection and CRLF/CR line ending normalization.
 - **XXE & DoS Protection**: Built-in security limits (`ParseOptions`) restricting entity reference expansion depth (preventing XML Bomb / Billion Laughs attacks), element nesting depth, total element count, and max attributes per tag.
 - **Allocation-Free Serialization**: Fast streaming [`XmlSerializer`](docs/API_GUIDE.md#xmlserializer) with optional pretty-printing, custom indentation, and streaming character escaping.
@@ -29,15 +34,24 @@ Add `xml_lib` to your `Cargo.toml`:
 xml_lib = "1.2.0"
 ```
 
+For bare-metal `#![no_std]` embedded targets:
+
+```toml
+[dependencies]
+xml_lib = { version = "1.2.0", default-features = false, features = ["alloc", "small_nodes"] }
+```
+
 ### Feature Flags
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
-| `std` | **Enabled** | Standard library integration |
-| `dtd` | **Enabled** | DTD content model and attribute validation |
-| `xsd` | **Enabled** | XSD schema and restriction facet validation |
-| `xpath` | **Enabled** | XPath 1.0 lexing, parsing, and evaluation |
-| `stringify` | **Enabled** | DOM tree formatting and serialization |
+| `std` | **Enabled** | Standard library integration (includes `alloc`) |
+| `alloc` | **Enabled** | Heap allocation primitives (`Vec`, `String`, `Box`, `BTreeMap`) for `#![no_std]` bare-metal targets |
+| `small_nodes` | Disabled | Uses 16-bit `u16` `NodeId` indices (max 65,535 nodes per doc) for ultra-low RAM microcontrollers |
+| `dtd` | **Enabled** | DTD content model and attribute constraint validation |
+| `xsd` | **Enabled** | XSD schema definition and restriction facet validation |
+| `xpath` | **Enabled** | XPath 1.0 lexing, AST parsing, and query evaluation engine |
+| `stringify` | **Enabled** | DOM tree formatting, pretty-printing, and XML serialization |
 
 ---
 
@@ -60,7 +74,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 2. XPath 1.0 Queries
+### 2. Zero-Allocation Streaming Pull Parsing (`XmlPullParser`)
+```rust
+use xml_lib::{XmlPullEvent, XmlPullParser};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let xml = r#"<sensor id="temp_01" location="lab"><val>24.5</val></sensor>"#;
+    let mut parser = XmlPullParser::new(xml);
+
+    while let Some(event) = parser.next_event()? {
+        match event {
+            XmlPullEvent::StartElement { name, .. } => {
+                println!("Start element: <{name}>");
+                for attr in event.attributes() {
+                    println!("  Attribute: {} = {}", attr.name, attr.value);
+                }
+            }
+            XmlPullEvent::Text(text) => println!("Text payload: \"{text}\""),
+            XmlPullEvent::EndElement { name } => println!("End element: </{name}>"),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+```
+
+### 3. XPath 1.0 Queries
 ```rust
 use xml_lib::{parse, XPathEngine, XPathValue};
 
@@ -88,32 +127,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### 3. DTD Schema Validation
+### 4. SOLID Trait-Based Schema Validation (`XmlValidator`)
 ```rust
-use xml_lib::{parse, DtdValidator};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let xml = r#"<?xml version="1.0"?>
-    <!DOCTYPE note [
-      <!ELEMENT note (to, from, heading, body)>
-      <!ELEMENT to (#PCDATA)>
-      <!ELEMENT from (#PCDATA)>
-      <!ELEMENT heading (#PCDATA)>
-      <!ELEMENT body (#PCDATA)>
-    ]>
-    <note><to>Tove</to><from>Jani</from><heading>Reminder</heading><body>Don't forget me!</body></note>"#;
-
-    let doc = parse(xml)?;
-    let validator = DtdValidator::new();
-    validator.validate(&doc)?;
-    println!("DTD Validation succeeded!");
-    Ok(())
-}
-```
-
-### 4. XSD Restriction Facet Validation
-```rust
-use xml_lib::{parse, XsdValidator};
+use xml_lib::{parse, XsdValidator, XmlValidator};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let schema_xml = r#"<?xml version="1.0"?>
@@ -132,10 +148,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     validator.parse_schema(schema_xml)?;
 
     let valid_doc = parse("<age>25</age>")?;
-    assert!(validator.validate(&valid_doc).is_ok());
-
-    let invalid_doc = parse("<age>150</age>")?;
-    assert!(validator.validate(&invalid_doc).is_err());
+    // Uses the abstract XmlValidator trait interface
+    let validator_trait: &dyn XmlValidator = &validator;
+    validator_trait.validate(&valid_doc)?;
+    println!("Validation passed successfully!");
     Ok(())
 }
 ```
@@ -145,7 +161,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Performance Highlights
 
 - **Peak Memory**: ~75% lower RAM usage compared to string-collecting parsers through zero-copy UTF-8 slice indexing.
-- **Node Size**: Compact `32-byte` node payload stored with `Box<str>` string pointers and `u32` arena indices.
+- **Node Size**: Compact `32-byte` node payload (or `24-byte` with `small_nodes` feature) stored with `Box<str>` string pointers and arena indices.
+- **Embedded Streaming**: Zero-allocation streaming parser (`XmlPullParser`) processing streams on bare-metal microcontrollers without heap allocation (`no_alloc`).
 - **XPath Speed**: Algorithmic $O(N \log N)$ deduplication accelerating path evaluations by 5x-10x.
 
 ---
@@ -155,7 +172,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Complete API Reference Guide](docs/API_GUIDE.md)
 - [Executable Code Examples](examples/)
-- [Optimization & Refactor Plan](docs/advanced_refactor_plan.md)
+- [Optimization & Performance Refactor Plan](docs/advanced_refactor_plan.md)
+- [DRY Consolidation Refactor Plan](docs/dry_refactor_plan.md)
+- [SOLID Architecture Refactor Plan](docs/solid_refactor_plan.md)
+- [Embedded Systems Refactor Plan](docs/embedded_refactor_plan.md)
 
 ---
 

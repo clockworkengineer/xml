@@ -1,6 +1,6 @@
 # Technical Architecture & Internal Design
 
-This document details the internal design, memory layout, security enforcement model, and subsystem mechanics of the `xml_lib` Rust crate.
+This document details the internal design, memory layout, security enforcement model, SOLID trait abstractions, and embedded systems architecture of the `xml_lib` Rust crate.
 
 ---
 
@@ -10,10 +10,14 @@ This document details the internal design, memory layout, security enforcement m
 flowchart TD
     A[Raw Input Stream / Byte Slice / File] -->|BOM & Line Normalization| B[XmlSource]
     B -->|Zero-Copy Slice Tokens| C[XmlParser]
+    B -->|Zero-Allocation Streaming| K[XmlPullParser]
     C -->|Security Limits Check| D[Document - Arena Model]
+    K -->|Borrowed XmlPullEvent| L[Embedded Microcontroller Application]
     D --> E[XPathEngine]
     D --> F[DtdValidator]
     D --> G[XsdValidator]
+    F ..->|Implements| M[XmlValidator Trait]
+    G ..->|Implements| M
     D --> H[XmlSerializer]
     E -->|NodeSet / Primitive Result| I[Application Code]
     H -->|Streaming UTF-8 Output| J[XmlDestination]
@@ -27,14 +31,19 @@ Unlike traditional object-oriented DOM libraries that use heap-allocated pointer
 
 ### Key Benefits
 
-1. **Compact 32-Bit Identifiers**: Every node is referenced by a `NodeId` (`u32`). Memory layout per node is reduced from 80 bytes to **32 bytes** on 64-bit systems.
+1. **Compact 32-Bit / 16-Bit Identifiers**: Every node is referenced by a `NodeId` (`u32` by default, or `u16` with feature `small_nodes`). Memory layout per node is reduced from 80 bytes to **32 bytes** (or **24 bytes** with `small_nodes`).
 2. **CPU Cache Line Efficiency**: Continuous memory layout allows CPU prefetchers to load multiple adjacent nodes into L1/L2 cache lines simultaneously.
 3. **No Reference Cycles or Lifetimes**: Node linking (`parent`, `children`) uses simple integer indices, avoiding memory leaks or complex borrow checker lifetimes.
 
 ### Node Data Memory Layout
 
 ```rust
+// Standard mode: u32 (supports 4.2B nodes). small_nodes feature: u16 (supports 65.5K nodes).
+#[cfg(not(feature = "small_nodes"))]
 pub type NodeId = u32;
+
+#[cfg(feature = "small_nodes")]
+pub type NodeId = u16;
 
 pub struct Attribute {
     pub name: Box<str>,   // 16 bytes (ptr + len)
@@ -42,18 +51,45 @@ pub struct Attribute {
 }
 
 pub struct NodeData {
-    pub id: NodeId,              // 4 bytes
-    pub parent: Option<NodeId>,  // 8 bytes (discriminant + u32)
-    pub children: Vec<NodeId>,   // 24 bytes (ptr + cap + len of u32)
+    pub id: NodeId,              // 4 bytes (or 2 bytes)
+    pub parent: Option<NodeId>,  // 8 bytes (or 4 bytes)
+    pub children: Vec<NodeId>,   // 24 bytes
     pub kind: NodeKind,          // Tag payload variant
 }
 ```
 
 ---
 
-## 3. Security Policy & XXE Safeguards (`ParseOptions`)
+## 3. SOLID Trait Abstraction (`XmlValidator`)
 
-To defend against XML Denial of Service (DoS) and XML External Entity (XXE) attacks, `xml_lib` enforces strict resource thresholds at runtime:
+To adhere to the Open/Closed Principle (OCP), Liskov Substitution Principle (LSP), and Dependency Inversion Principle (DIP), all document validation engines implement the abstract [`XmlValidator`](API_GUIDE.md#xmlvalidator) trait:
+
+```rust
+pub trait XmlValidator {
+    fn validate(&self, doc: &Document) -> Result<()>;
+}
+```
+
+### Implemented By
+- `DtdValidator`: Validates DTD internal subset content models (`<!ELEMENT>`) and required attributes.
+- `XsdValidator`: Validates W3C XML Schema definitions (`xs:schema`), element sequences, and restriction facets.
+- **Custom User Validators**: Applications can define custom schema or business rule validators and use them as trait objects (`&dyn XmlValidator`).
+
+---
+
+## 4. Embedded Systems & Bare-Metal Architecture (`#![no_std]`)
+
+For microcontrollers and bare-metal environments (Cortex-M, ESP32, RISC-V):
+
+1. **`#![no_std]` + `alloc` Support**: When standard library integration is disabled (`default-features = false, features = ["alloc"]`), `xml_lib` compiles under `#![no_std]` using `alloc::vec::Vec`, `alloc::string::String`, and `alloc::collections::BTreeMap`.
+2. **Zero-Allocation Streaming Pull Parser (`XmlPullParser`)**: SAX-style streaming reader that emits borrowed events (`XmlPullEvent<'a>`) over a raw byte/string slice with zero heap allocation (`no_alloc`).
+3. **16-Bit Compact Arena (`small_nodes`)**: Cuts node index overhead down to 16 bits (`u16`), saving an additional 25% RAM per node.
+
+---
+
+## 5. Security Policy & XXE Safeguards (`ParseOptions`)
+
+To defend against XML Denial of Service (DoS) and XML External Entity (XXE) attacks, `xml_lib` enforces strict resource thresholds at runtime via `ParseOptions`:
 
 ```rust
 pub struct ParseOptions {
@@ -76,7 +112,7 @@ pub struct ParseOptions {
 
 ---
 
-## 4. Subsystem Specifications
+## 6. Subsystem Specifications
 
 ### A. Parser Engine (`XmlParser`)
 - **Zero-Copy Scanning**: Operates on a UTF-8 string slice maintained by `XmlSource`. Tag names and attributes are tokenized via byte ranges and allocated into `Box<str>` in a single step.

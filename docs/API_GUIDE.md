@@ -8,11 +8,14 @@ This document provides a comprehensive usage reference and code snippet guide fo
 
 1. [Parsing XML Documents](#1-parsing-xml-documents)
 2. [DOM Navigation & Node Operations](#2-dom-navigation--node-operations)
-3. [Formatting & Serialization](#3-formatting--serialization)
-4. [Custom Entity Resolution](#4-custom-entity-resolution)
-5. [DTD Validation](#5-dtd-validation)
-6. [XSD Validation](#6-xsd-validation)
-7. [XPath 1.0 Query Evaluation](#7-xpath-10-query-evaluation)
+3. [DRY Helper API Extensions](#3-dry-helper-api-extensions)
+4. [Formatting & Serialization](#4-formatting--serialization)
+5. [Custom Entity Resolution](#5-custom-entity-resolution)
+6. [DTD Validation](#6-dtd-validation)
+7. [XSD Validation](#7-xsd-validation)
+8. [SOLID Trait-Based Schema Validation (`XmlValidator`)](#8-solid-trait-based-schema-validation-xmlvalidator)
+9. [Zero-Allocation Streaming Pull Parser (`XmlPullParser`)](#9-zero-allocation-streaming-pull-parser-xmlpullparser)
+10. [XPath 1.0 Query Evaluation](#10-xpath-10-query-evaluation)
 
 ---
 
@@ -106,7 +109,30 @@ println!("{}", stringify(&doc));
 
 ---
 
-## 3. Formatting & Serialization
+## 3. DRY Helper API Extensions
+
+### `Document::get_element_children`
+Fetches direct child node IDs filtered down to `NodeKind::Element` variants, ignoring raw text/whitespace nodes:
+
+```rust
+let element_child_ids = doc.get_element_children(parent_id);
+```
+
+### `Document::get_attribute`
+Directly retrieves attribute string value by attribute name:
+
+```rust
+if let Some(cat) = doc.get_attribute(elem_id, "category") {
+    println!("Category: {cat}");
+}
+```
+
+### `PREDEFINED_ENTITIES`
+Exposes standard XML 1.0 entity lookup constant array: `[("lt", "<"), ("gt", ">"), ("amp", "&"), ("quot", "\""), ("apos", "'")]`.
+
+---
+
+## 4. Formatting & Serialization
 
 ### `stringify(doc: &Document) -> String`
 Serializes a `Document` with default pretty-printing (2 spaces indentation).
@@ -136,7 +162,7 @@ assert_eq!(compact_output, "<root><item>Data</item></root>");
 
 ---
 
-## 4. Custom Entity Resolution
+## 5. Custom Entity Resolution
 
 Use `EntityMapper` to register custom XML entity references.
 
@@ -153,7 +179,7 @@ assert_eq!(expanded, "Book: Pride and Prejudice by Jane Austen");
 
 ---
 
-## 5. DTD Validation
+## 6. DTD Validation
 
 Validates element content structure and required attributes declared in `<!DOCTYPE>`.
 
@@ -179,7 +205,7 @@ validator.validate(&doc)?;
 
 ---
 
-## 6. XSD Validation
+## 7. XSD Validation
 
 Parses W3C XML Schemas (`xs:schema`) and validates document instance structures and simple type restrictions.
 
@@ -207,7 +233,48 @@ assert!(validator.validate(&doc).is_ok());
 
 ---
 
-## 7. XPath 1.0 Query Evaluation
+## 8. SOLID Trait-Based Schema Validation (`XmlValidator`)
+
+All schema validation engines implement the abstract [`XmlValidator`](#xmlvalidator) trait (`pub trait XmlValidator { fn validate(&self, doc: &Document) -> Result<()>; }`).
+
+```rust
+use xml_lib::{parse, DtdValidator, XsdValidator, XmlValidator};
+
+fn run_validation(validator: &dyn XmlValidator, doc: &Document) -> Result<(), xml_lib::XmlError> {
+    validator.validate(doc)
+}
+```
+
+---
+
+## 9. Zero-Allocation Streaming Pull Parser (`XmlPullParser`)
+
+High-speed SAX-style streaming reader operating over raw byte/string slices with zero heap allocation (`no_alloc`).
+
+```rust
+use xml_lib::{XmlPullEvent, XmlPullParser};
+
+let xml = r#"<sensor id="temp_01"><val>24.5</val></sensor>"#;
+let mut parser = XmlPullParser::new(xml);
+
+while let Some(event) = parser.next_event()? {
+    match event {
+        XmlPullEvent::StartElement { name, .. } => {
+            println!("Start tag: <{name}>");
+            for attr in event.attributes() {
+                println!("  Attr: {} = {}", attr.name, attr.value);
+            }
+        }
+        XmlPullEvent::Text(t) => println!("Text: {t}"),
+        XmlPullEvent::EndElement { name } => println!("End tag: </{name}>"),
+        _ => {}
+    }
+}
+```
+
+---
+
+## 10. XPath 1.0 Query Evaluation
 
 ### Basic Node Queries
 

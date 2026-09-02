@@ -6,12 +6,12 @@ fn test_attribute_creation_and_search() {
     let attr2 = Attribute::new("test2", "value2");
     let attrs = vec![attr1.clone(), attr2.clone()];
 
-    assert_eq!(attr1.name, "test1");
-    assert_eq!(attr1.value, "value1");
+    assert_eq!(&*attr1.name, "test1");
+    assert_eq!(&*attr1.value, "value1");
 
-    assert!(attrs.iter().any(|a| a.name == "test1"));
-    assert!(attrs.iter().any(|a| a.name == "test2"));
-    assert!(!attrs.iter().any(|a| a.name == "test3"));
+    assert!(attrs.iter().any(|a| &*a.name == "test1"));
+    assert!(attrs.iter().any(|a| &*a.name == "test2"));
+    assert!(!attrs.iter().any(|a| &*a.name == "test3"));
 }
 
 #[test]

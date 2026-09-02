@@ -58,6 +58,10 @@ impl XmlSerializer {
             }
         }
 
+        if let Some(prolog_id) = doc.prolog_id() {
+            Self::serialize_children(doc, prolog_id, 0, options, &mut dest);
+        }
+
         if let Some(root_id) = doc.root_id() {
             Self::serialize_children(doc, root_id, 0, options, &mut dest);
         }
@@ -74,6 +78,9 @@ impl XmlSerializer {
     ) {
         if let Some(node) = doc.get_node(parent_id) {
             for &c_id in &node.children {
+                if doc.declaration_id() == Some(c_id) {
+                    continue; // Already processed XML Declaration
+                }
                 Self::serialize_node(doc, c_id, indent_level, options, dest);
             }
         }
@@ -107,7 +114,7 @@ impl XmlSerializer {
                     dest.write_str(" ");
                     dest.write_str(&attr.name);
                     dest.write_str("=\"");
-                    dest.write_str(&Self::escape_attr(&attr.value));
+                    Self::write_escaped_attr(&attr.value, dest);
                     dest.write_str("\"");
                 }
 
@@ -128,7 +135,7 @@ impl XmlSerializer {
                         for &c_id in &node.children {
                             if let Some(child) = doc.get_node(c_id) {
                                 match &child.kind {
-                                    NodeKind::Text(t) => dest.write_str(&Self::escape_text(t)),
+                                    NodeKind::Text(t) => Self::write_escaped_text(t, dest),
                                     NodeKind::CData(c) => {
                                         dest.write_str("<![CDATA[");
                                         dest.write_str(c);
@@ -156,7 +163,7 @@ impl XmlSerializer {
             }
             NodeKind::Text(t) => {
                 if !options.pretty_print || !t.trim().is_empty() {
-                    dest.write_str(&Self::escape_text(t));
+                    Self::write_escaped_text(t, dest);
                 }
             }
             NodeKind::CData(c) => {
@@ -190,16 +197,38 @@ impl XmlSerializer {
         }
     }
 
-    fn escape_text(s: &str) -> String {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
+    fn write_escaped_text(s: &str, dest: &mut XmlDestination) {
+        let mut last = 0;
+        let bytes = s.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            let esc = match b {
+                b'&' => "&amp;",
+                b'<' => "&lt;",
+                b'>' => "&gt;",
+                _ => continue,
+            };
+            dest.write_str(&s[last..i]);
+            dest.write_str(esc);
+            last = i + 1;
+        }
+        dest.write_str(&s[last..]);
     }
 
-    fn escape_attr(s: &str) -> String {
-        s.replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;")
+    fn write_escaped_attr(s: &str, dest: &mut XmlDestination) {
+        let mut last = 0;
+        let bytes = s.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            let esc = match b {
+                b'&' => "&amp;",
+                b'<' => "&lt;",
+                b'>' => "&gt;",
+                b'"' => "&quot;",
+                _ => continue,
+            };
+            dest.write_str(&s[last..i]);
+            dest.write_str(esc);
+            last = i + 1;
+        }
+        dest.write_str(&s[last..]);
     }
 }

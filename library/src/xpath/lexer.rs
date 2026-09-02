@@ -59,41 +59,44 @@ pub enum Token {
     Eof,
 }
 
-/// Lexer scanning XPath string slice character by character.
+/// Lexer scanning XPath string slice character by character without intermediate allocations.
 #[derive(Debug, Clone)]
 pub struct XPathLexer<'a> {
-    chars: Vec<char>,
+    input: &'a str,
     pos: usize,
-    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> XPathLexer<'a> {
     /// Instantiates a new [`XPathLexer`] for a given XPath input string slice.
     pub fn new(input: &'a str) -> Self {
-        Self {
-            chars: input.chars().collect(),
-            pos: 0,
-            _phantom: std::marker::PhantomData,
-        }
+        Self { input, pos: 0 }
     }
 
     /// Peeks at current character.
     pub fn peek(&self) -> Option<char> {
-        self.chars.get(self.pos).copied()
+        if self.pos >= self.input.len() {
+            None
+        } else {
+            self.input[self.pos..].chars().next()
+        }
     }
 
     fn advance(&mut self) -> Option<char> {
-        let ch = self.chars.get(self.pos).copied();
-        if ch.is_some() {
-            self.pos += 1;
+        if self.pos >= self.input.len() {
+            None
+        } else {
+            let ch = self.input[self.pos..].chars().next()?;
+            self.pos += ch.len_utf8();
+            Some(ch)
         }
-        ch
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(ch) = self.peek() {
-            if ch.is_ascii_whitespace() {
-                self.advance();
+        let bytes = self.input.as_bytes();
+        while self.pos < bytes.len() {
+            let b = bytes[self.pos];
+            if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r' {
+                self.pos += 1;
             } else {
                 break;
             }
@@ -124,6 +127,7 @@ impl<'a> XPathLexer<'a> {
                     self.advance();
                     Ok(Token::DoubleDot)
                 } else if self.peek().map_or(false, |c| c.is_ascii_digit()) {
+                    // Backtrack 1 byte for leading dot in number
                     self.pos -= 1;
                     self.read_number()
                 } else {
@@ -221,26 +225,28 @@ impl<'a> XPathLexer<'a> {
 
     fn read_string(&mut self, quote: char) -> Result<Token> {
         self.advance(); // consume quote
-        let mut s = String::new();
+        let start_pos = self.pos;
         while let Some(ch) = self.peek() {
             if ch == quote {
-                self.advance();
+                let s = self.input[start_pos..self.pos].to_string();
+                self.advance(); // consume quote
                 return Ok(Token::LiteralString(s));
             }
-            s.push(self.advance().unwrap());
+            self.advance();
         }
         Err(XmlError::XPathError("Unterminated string literal in XPath".into()))
     }
 
     fn read_number(&mut self) -> Result<Token> {
-        let mut num_str = String::new();
+        let start_pos = self.pos;
         while let Some(ch) = self.peek() {
             if ch.is_ascii_digit() || ch == '.' {
-                num_str.push(self.advance().unwrap());
+                self.advance();
             } else {
                 break;
             }
         }
+        let num_str = &self.input[start_pos..self.pos];
         num_str
             .parse::<f64>()
             .map(Token::LiteralNumber)
@@ -248,14 +254,15 @@ impl<'a> XPathLexer<'a> {
     }
 
     fn read_name(&mut self) -> Result<Token> {
-        let mut name = String::new();
+        let start_pos = self.pos;
         while let Some(ch) = self.peek() {
             if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
-                name.push(self.advance().unwrap());
+                self.advance();
             } else {
                 break;
             }
         }
+        let name = self.input[start_pos..self.pos].to_string();
         Ok(Token::Name(name))
     }
 }

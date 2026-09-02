@@ -137,7 +137,7 @@ impl DtdValidator {
 
         if let NodeKind::Element { name, attributes } = &node.kind {
             // Check Element Rule
-            if let Some(rule) = self.elements.get(name) {
+            if let Some(rule) = self.elements.get(&**name) {
                 match &rule.model {
                     ContentModel::Empty => {
                         let has_child_elems = node.children.iter().any(|&c_id| {
@@ -154,7 +154,7 @@ impl DtdValidator {
                     ContentModel::Children(spec) => {
                         let child_names: Vec<String> = node.children.iter().filter_map(|&c_id| {
                             doc.get_node(c_id).and_then(|c| match &c.kind {
-                                NodeKind::Element { name, .. } => Some(name.clone()),
+                                NodeKind::Element { name, .. } => Some(name.to_string()),
                                 _ => None,
                             })
                         }).collect();
@@ -181,10 +181,10 @@ impl DtdValidator {
             }
 
             // Check Attribute Rules
-            if let Some(attr_rules) = self.attributes.get(name) {
+            if let Some(attr_rules) = self.attributes.get(&**name) {
                 for rule in attr_rules {
                     if rule.default_decl.contains("#REQUIRED") {
-                        let present = attributes.iter().any(|a| a.name == rule.attr_name);
+                        let present = attributes.iter().any(|a| *a.name == rule.attr_name);
                         if !present {
                             return Err(XmlError::DtdError(format!(
                                 "Required attribute '{}' missing on element <{name}>",

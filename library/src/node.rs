@@ -1,22 +1,22 @@
 //! # Node Data Types
 //!
-//! Defines node kinds, attributes, arena node indices, and node metadata.
+//! Defines memory-optimized node kinds, boxed attributes, arena node indices, and node metadata.
 
 /// Unique index identifier for a node within the arena [`Vec<NodeData>`].
 pub type NodeId = usize;
 
-/// Key-value attribute pair on an XML Element tag.
+/// Key-value attribute pair on an XML Element tag stored with compact boxed strings (`Box<str>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     /// Attribute name/key (e.g., `id`, `xmlns:xs`, `category`).
-    pub name: String,
+    pub name: Box<str>,
     /// Attribute string value.
-    pub value: String,
+    pub value: Box<str>,
 }
 
 impl Attribute {
     /// Instantiates a new [`Attribute`] from name and value.
-    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn new(name: impl Into<Box<str>>, value: impl Into<Box<str>>) -> Self {
         Self {
             name: name.into(),
             value: value.into(),
@@ -24,44 +24,44 @@ impl Attribute {
     }
 }
 
-/// Enum representing all supported XML node variants.
+/// Enum representing all supported XML node variants stored with memory-compact boxed types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     /// Top-level Prolog virtual container.
     Prolog,
     /// XML Declaration (`<?xml version="..." encoding="..." standalone="..."?>`).
     Declaration {
-        version: String,
-        encoding: Option<String>,
+        version: Box<str>,
+        encoding: Option<Box<str>>,
         standalone: Option<bool>,
     },
     /// Top-level Root virtual container.
     Root,
     /// XML Element tag (`<name attr="val">...</name>`).
     Element {
-        name: String,
+        name: Box<str>,
         attributes: Vec<Attribute>,
     },
     /// Text node content.
-    Text(String),
+    Text(Box<str>),
     /// CDATA section (`<!CDATA[...]]>`).
-    CData(String),
+    CData(Box<str>),
     /// XML Comment (`<!-- ... -->`).
-    Comment(String),
+    Comment(Box<str>),
     /// Processing Instruction (`<?target data?>`).
     ProcessingInstruction {
-        target: String,
-        data: String,
+        target: Box<str>,
+        data: Box<str>,
     },
     /// DTD DOCTYPE Definition (`<!DOCTYPE name ...>`).
     DocTypeDefinition {
-        name: String,
-        public_id: Option<String>,
-        system_id: Option<String>,
-        internal_subset: Option<String>,
+        name: Box<str>,
+        public_id: Option<Box<str>>,
+        system_id: Option<Box<str>>,
+        internal_subset: Option<Box<str>>,
     },
     /// Entity Reference (`&name;`).
-    EntityReference(String),
+    EntityReference(Box<str>),
 }
 
 impl NodeKind {

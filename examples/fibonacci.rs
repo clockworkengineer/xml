@@ -17,12 +17,9 @@ fn main() {
     for index in 0..15 {
         let term_elem_id = doc.add_node(NodeKind::Element {
             name: "term".into(),
-            attributes: vec![Attribute {
-                name: "index".into(),
-                value: index.to_string(),
-            }],
+            attributes: vec![Attribute::new("index", index.to_string())],
         });
-        let val_text_id = doc.add_node(NodeKind::Text(a.to_string()));
+        let val_text_id = doc.add_node(NodeKind::Text(a.to_string().into_boxed_str()));
         doc.append_child(term_elem_id, val_text_id).unwrap();
         doc.append_child(root_elem_id, term_elem_id).unwrap();
 

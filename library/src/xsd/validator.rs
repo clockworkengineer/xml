@@ -67,16 +67,16 @@ impl XsdValidator {
     fn collect_elements(&mut self, schema_doc: &Document, node_id: NodeId) {
         if let Some(node) = schema_doc.get_node(node_id) {
             if let NodeKind::Element { name, attributes } = &node.kind {
-                if name.ends_with("element") || name == "xs:element" || name == "xsd:element" {
+                if name.ends_with("element") || &**name == "xs:element" || &**name == "xsd:element" {
                     let elem_name = attributes
                         .iter()
-                        .find(|a| a.name == "name")
-                        .map(|a| a.value.clone())
+                        .find(|a| &*a.name == "name")
+                        .map(|a| a.value.to_string())
                         .unwrap_or_default();
                     let elem_type = attributes
                         .iter()
-                        .find(|a| a.name == "type")
-                        .map(|a| a.value.clone())
+                        .find(|a| &*a.name == "type")
+                        .map(|a| a.value.to_string())
                         .unwrap_or_else(|| "xs:string".into());
 
                     if !elem_name.is_empty() {
@@ -109,7 +109,7 @@ impl XsdValidator {
             if let Some(node) = doc.get_node(nid) {
                 if let NodeKind::Element { name, attributes } = &node.kind {
                     let local_name = name.split(':').last().unwrap_or(name);
-                    let get_val = || attributes.iter().find(|a| a.name == "value").map(|a| a.value.as_str());
+                    let get_val = || attributes.iter().find(|a| &*a.name == "value").map(|a| &*a.value);
 
                     match local_name {
                         "minInclusive" => {
@@ -165,7 +165,7 @@ impl XsdValidator {
             .ok_or_else(|| XmlError::XsdError("Invalid node".into()))?;
 
         if let NodeKind::Element { name, .. } = &node.kind {
-            if let Some(rule) = self.elements.get(name) {
+            if let Some(rule) = self.elements.get(&**name) {
                 let text = self.get_element_text(doc, elem_id);
                 let trimmed = text.trim();
 

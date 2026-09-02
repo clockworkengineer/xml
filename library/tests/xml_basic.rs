@@ -14,10 +14,10 @@ fn test_basic_parsing() {
     let root_node = doc.get_node(root_elem_id).expect("Root node exists");
     
     if let NodeKind::Element { name, attributes } = &root_node.kind {
-        assert_eq!(name, "root");
+        assert_eq!(&**name, "root");
         assert_eq!(attributes.len(), 1);
-        assert_eq!(attributes[0].name, "attr");
-        assert_eq!(attributes[0].value, "test");
+        assert_eq!(&*attributes[0].name, "attr");
+        assert_eq!(&*attributes[0].value, "test");
     } else {
         panic!("Expected Element node");
     }
@@ -45,8 +45,8 @@ fn test_parsing_comments_and_pi() {
                 has_comment = true;
             }
             NodeKind::ProcessingInstruction { target, data } => {
-                assert_eq!(target, "target");
-                assert_eq!(data, "action=\"run\"");
+                assert_eq!(&**target, "target");
+                assert_eq!(&**data, "action=\"run\"");
                 has_pi = true;
             }
             _ => {}
@@ -66,7 +66,7 @@ fn test_parsing_cdata() {
 
     for node in doc.nodes() {
         if let NodeKind::CData(content) = &node.kind {
-            assert_eq!(content, "<unescaped & content>");
+            assert_eq!(&**content, "<unescaped & content>");
             found_cdata = true;
         }
     }

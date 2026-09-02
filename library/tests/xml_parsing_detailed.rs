@@ -13,10 +13,10 @@ fn test_parse_attributes_single_and_multiple() {
     let root1_id = doc1.root_element_id().unwrap();
     let root1 = doc1.get_node(root1_id).unwrap();
     if let NodeKind::Element { name, attributes } = &root1.kind {
-        assert_eq!(name, "AddressBook");
+        assert_eq!(&**name, "AddressBook");
         assert_eq!(attributes.len(), 1);
-        assert_eq!(attributes[0].name, "number");
-        assert_eq!(attributes[0].value, "15");
+        assert_eq!(&*attributes[0].name, "number");
+        assert_eq!(&*attributes[0].value, "15");
     } else {
         panic!("Expected Element node");
     }
@@ -29,12 +29,12 @@ fn test_parse_attributes_single_and_multiple() {
     let root2 = doc2.get_node(root2_id).unwrap();
     if let NodeKind::Element { attributes, .. } = &root2.kind {
         assert_eq!(attributes.len(), 3);
-        assert_eq!(attributes[0].name, "number");
-        assert_eq!(attributes[0].value, "15");
-        assert_eq!(attributes[1].name, "away");
-        assert_eq!(attributes[1].value, "yes");
-        assert_eq!(attributes[2].name, "flat");
-        assert_eq!(attributes[2].value, "no");
+        assert_eq!(&*attributes[0].name, "number");
+        assert_eq!(&*attributes[0].value, "15");
+        assert_eq!(&*attributes[1].name, "away");
+        assert_eq!(&*attributes[1].value, "yes");
+        assert_eq!(&*attributes[2].name, "flat");
+        assert_eq!(&*attributes[2].value, "no");
     }
 }
 
@@ -44,21 +44,21 @@ fn test_parse_attributes_quotes_and_entities() {
     let doc_dq = parse(xml_dq).expect("Double quotes inside single quotes should succeed");
     let root_dq_id = doc_dq.root_element_id().unwrap();
     if let NodeKind::Element { attributes, .. } = &doc_dq.get_node(root_dq_id).unwrap().kind {
-        assert_eq!(attributes[0].value, r#"George "Shotgun" Ziegler"#);
+        assert_eq!(&*attributes[0].value, r#"George "Shotgun" Ziegler"#);
     }
 
     let xml_sq = r#"<gangster name="George 'Shotgun' Ziegler"></gangster>"#;
     let doc_sq = parse(xml_sq).expect("Single quotes inside double quotes should succeed");
     let root_sq_id = doc_sq.root_element_id().unwrap();
     if let NodeKind::Element { attributes, .. } = &doc_sq.get_node(root_sq_id).unwrap().kind {
-        assert_eq!(attributes[0].value, "George 'Shotgun' Ziegler");
+        assert_eq!(&*attributes[0].value, "George 'Shotgun' Ziegler");
     }
 
     let xml_ws = r#"<AddressBook   number   =   '  15  '   ></AddressBook>"#;
     let doc_ws = parse(xml_ws).expect("Whitespace around attribute equals should succeed");
     let root_ws_id = doc_ws.root_element_id().unwrap();
     if let NodeKind::Element { attributes, .. } = &doc_ws.get_node(root_ws_id).unwrap().kind {
-        assert_eq!(attributes[0].value, "  15  ");
+        assert_eq!(&*attributes[0].value, "  15  ");
     }
 }
 

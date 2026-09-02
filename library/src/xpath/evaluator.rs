@@ -46,8 +46,8 @@ impl<'a> XPathEvaluator<'a> {
                     if let NodeTest::Name(attr_name) = test {
                         if let Some(node) = self.doc.get_node(context_node) {
                             if let NodeKind::Element { attributes, .. } = &node.kind {
-                                if let Some(attr) = attributes.iter().find(|a| a.name == *attr_name) {
-                                    return Ok(XPathValue::String(attr.value.clone()));
+                                if let Some(attr) = attributes.iter().find(|a| &*a.name == attr_name) {
+                                    return Ok(XPathValue::String(attr.value.to_string()));
                                 }
                             }
                         }
@@ -214,9 +214,9 @@ impl<'a> XPathEvaluator<'a> {
             NodeTest::Text => matches!(node.kind, NodeKind::Text(_)),
             NodeTest::Comment => matches!(node.kind, NodeKind::Comment(_)),
             NodeTest::Name(target_name) => match &node.kind {
-                NodeKind::Element { name, .. } => name == target_name,
-                NodeKind::ProcessingInstruction { target, .. } => target == target_name,
-                NodeKind::DocTypeDefinition { name, .. } => name == target_name,
+                NodeKind::Element { name, .. } => &**name == target_name,
+                NodeKind::ProcessingInstruction { target, .. } => &**target == target_name,
+                NodeKind::DocTypeDefinition { name, .. } => &**name == target_name,
                 _ => false,
             },
             _ => true,

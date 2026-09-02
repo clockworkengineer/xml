@@ -81,8 +81,8 @@ impl<'a> XmlParser<'a> {
         }
 
         let decl_id = doc.add_node(NodeKind::Declaration {
-            version,
-            encoding,
+            version: version.into_boxed_str(),
+            encoding: encoding.map(String::into_boxed_str),
             standalone,
         });
         doc.set_declaration_id(decl_id);
@@ -157,7 +157,7 @@ impl<'a> XmlParser<'a> {
             let (attr_name, attr_value) = self.parse_attribute()?;
             
             // Check duplicate attribute error
-            if attributes.iter().any(|a: &Attribute| a.name == attr_name) {
+            if attributes.iter().any(|a: &Attribute| *a.name == attr_name) {
                 return Err(XmlError::SyntaxError {
                     message: format!("Duplicate attribute '{attr_name}' on element <{name}>"),
                     line: self.source.line(),
@@ -165,10 +165,7 @@ impl<'a> XmlParser<'a> {
                 });
             }
 
-            attributes.push(Attribute {
-                name: attr_name,
-                value: attr_value,
-            });
+            attributes.push(Attribute::new(attr_name, attr_value));
 
             self.total_attribute_count += 1;
             if attributes.len() > self.options.max_attribute_count {
@@ -181,7 +178,10 @@ impl<'a> XmlParser<'a> {
             self.source.skip_whitespace();
         }
 
-        let elem_id = doc.add_node(NodeKind::Element { name: name.clone(), attributes });
+        let elem_id = doc.add_node(NodeKind::Element {
+            name: name.clone().into_boxed_str(),
+            attributes,
+        });
         doc.append_child(parent_id, elem_id)?;
 
         if self.source.consume("/>") {
@@ -309,7 +309,7 @@ impl<'a> XmlParser<'a> {
         }
 
         let expanded = self.entity_mapper.expand(&raw_text)?;
-        Ok(doc.add_node(NodeKind::Text(expanded)))
+        Ok(doc.add_node(NodeKind::Text(expanded.into_boxed_str())))
     }
 
     /// Parses CDATA section (`<![CDATA[...]]>`).
@@ -320,7 +320,7 @@ impl<'a> XmlParser<'a> {
         while !self.source.is_eof() {
             if self.source.starts_with("]]>") {
                 self.source.consume("]]>");
-                return Ok(doc.add_node(NodeKind::CData(content)));
+                return Ok(doc.add_node(NodeKind::CData(content.into_boxed_str())));
             }
             content.push(self.source.next_char().unwrap());
         }
@@ -340,7 +340,7 @@ impl<'a> XmlParser<'a> {
         while !self.source.is_eof() {
             if self.source.starts_with("-->") {
                 self.source.consume("-->");
-                return Ok(doc.add_node(NodeKind::Comment(comment)));
+                return Ok(doc.add_node(NodeKind::Comment(comment.into_boxed_str())));
             }
             comment.push(self.source.next_char().unwrap());
         }
@@ -362,7 +362,10 @@ impl<'a> XmlParser<'a> {
         while !self.source.is_eof() {
             if self.source.starts_with("?>") {
                 self.source.consume("?>");
-                return Ok(doc.add_node(NodeKind::ProcessingInstruction { target, data }));
+                return Ok(doc.add_node(NodeKind::ProcessingInstruction {
+                    target: target.into_boxed_str(),
+                    data: data.into_boxed_str(),
+                }));
             }
             data.push(self.source.next_char().unwrap());
         }
@@ -432,10 +435,10 @@ impl<'a> XmlParser<'a> {
         }
 
         Ok(doc.add_node(NodeKind::DocTypeDefinition {
-            name,
-            public_id,
-            system_id,
-            internal_subset,
+            name: name.into_boxed_str(),
+            public_id: public_id.map(String::into_boxed_str),
+            system_id: system_id.map(String::into_boxed_str),
+            internal_subset: internal_subset.map(String::into_boxed_str),
         }))
     }
 

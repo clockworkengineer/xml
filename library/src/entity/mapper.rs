@@ -50,6 +50,9 @@ impl EntityMapper {
     /// # Errors
     /// Returns [`XmlError::SecurityLimitExceeded`] if expansion depth exceeds `max_depth` (XML bomb guard).
     pub fn expand(&self, input: &str) -> Result<String> {
+        if !input.contains('&') {
+            return Ok(input.to_string());
+        }
         self.expand_with_depth(input, 0)
     }
 
@@ -61,15 +64,14 @@ impl EntityMapper {
         }
 
         let mut result = String::with_capacity(input.len());
-        let chars: Vec<char> = input.chars().collect();
-        let mut i = 0;
+        let mut pos = 0;
+        let bytes = input.as_bytes();
 
-        while i < chars.len() {
-            if chars[i] == '&' {
-                // Find closing ';'
-                if let Some(end) = chars[i..].iter().position(|&c| c == ';') {
-                    let semi_idx = i + end;
-                    let entity_ref: String = chars[i + 1..semi_idx].iter().collect();
+        while pos < bytes.len() {
+            if bytes[pos] == b'&' {
+                if let Some(semi_offset) = input[pos..].find(';') {
+                    let semi_idx = pos + semi_offset;
+                    let entity_ref = &input[pos + 1..semi_idx];
 
                     if entity_ref.starts_with('#') {
                         // Numeric reference (dec or hex)
@@ -98,14 +100,14 @@ impl EntityMapper {
                         }
                     } else {
                         // Named reference
-                        match entity_ref.as_str() {
+                        match entity_ref {
                             "lt" => result.push('<'),
                             "gt" => result.push('>'),
                             "amp" => result.push('&'),
                             "quot" => result.push('"'),
                             "apos" => result.push('\''),
                             _ => {
-                                if let Some(val) = self.entities.get(&entity_ref) {
+                                if let Some(val) = self.entities.get(entity_ref) {
                                     let expanded_val = self.expand_with_depth(val, depth + 1)?;
                                     result.push_str(&expanded_val);
                                 } else {
@@ -117,15 +119,16 @@ impl EntityMapper {
                         }
                     }
 
-                    i = semi_idx + 1;
+                    pos = semi_idx + 1;
                 } else {
                     return Err(XmlError::EntityError(
                         "Unterminated entity reference missing ';'".into(),
                     ));
                 }
             } else {
-                result.push(chars[i]);
-                i += 1;
+                let ch = input[pos..].chars().next().unwrap();
+                result.push(ch);
+                pos += ch.len_utf8();
             }
         }
 

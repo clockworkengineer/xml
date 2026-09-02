@@ -1,4 +1,4 @@
-use xml_lib::{parse, stringify, Format, SerializeOptions, XmlSerializer};
+use xml_lib::{parse, stringify, SerializeOptions, XmlSerializer};
 
 #[test]
 fn test_roundtrip_stringify() {
@@ -15,8 +15,8 @@ fn test_serialize_options_pretty_print() {
     let doc = parse(xml).expect("Should parse");
 
     let options = SerializeOptions {
-        indent_spaces: Some(4),
-        format: Format::Utf8,
+        pretty_print: true,
+        indent_step: 4,
     };
 
     let serialized = XmlSerializer::serialize_to_string(&doc, &options);

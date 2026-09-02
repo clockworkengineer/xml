@@ -1,5 +1,5 @@
 use xml_lib::{
-    io::{XmlSource, XmlDestination, Format},
+    io::{XmlSource, XmlDestination},
     parse, parse_bytes,
 };
 use std::io::Write;
@@ -64,10 +64,10 @@ fn test_xml_source_from_file() {
 
 #[test]
 fn test_xml_destination_buffer_output() {
-    let mut dest = XmlDestination::new(Format::Utf8);
+    let mut dest = XmlDestination::new();
     dest.write_str("<root>");
     dest.write_str("Hello");
     dest.write_str("</root>");
 
-    assert_eq!(dest.buffer, "<root>Hello</root>");
+    assert_eq!(dest.as_str(), "<root>Hello</root>");
 }

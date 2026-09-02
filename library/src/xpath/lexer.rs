@@ -1,34 +1,65 @@
+//! # XPath 1.0 Lexer / Tokenizer
+//!
+//! Tokenizes raw XPath expression strings into discrete tokens ([`Token`]).
+
 use crate::error::{Result, XmlError};
 
+/// XPath 1.0 token variants.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    /// `/`
     Slash,
+    /// `//`
     DoubleSlash,
+    /// `@`
     At,
+    /// `.`
     Dot,
+    /// `..`
     DoubleDot,
+    /// `*`
     Star,
+    /// `::`
     ColonColon,
+    /// `(`
     LeftParen,
+    /// `)`
     RightParen,
+    /// `[`
     LeftBracket,
+    /// `]`
     RightBracket,
+    /// `,`
     Comma,
+    /// `|`
     Pipe,
+    /// `+`
     Plus,
+    /// `-`
     Minus,
+    /// `=`
     Eq,
+    /// `!=`
     NotEq,
+    /// `<`
     Lt,
+    /// `<=`
     LtEq,
+    /// `>`
     Gt,
+    /// `>=`
     GtEq,
+    /// Identifier or keyword name.
     Name(String),
+    /// Literal string enclosed in quotes.
     LiteralString(String),
+    /// Literal number.
     LiteralNumber(f64),
+    /// End of File / input stream.
     Eof,
 }
 
+/// Lexer scanning XPath string slice character by character.
 #[derive(Debug, Clone)]
 pub struct XPathLexer<'a> {
     chars: Vec<char>,
@@ -37,6 +68,7 @@ pub struct XPathLexer<'a> {
 }
 
 impl<'a> XPathLexer<'a> {
+    /// Instantiates a new [`XPathLexer`] for a given XPath input string slice.
     pub fn new(input: &'a str) -> Self {
         Self {
             chars: input.chars().collect(),
@@ -45,6 +77,7 @@ impl<'a> XPathLexer<'a> {
         }
     }
 
+    /// Peeks at current character.
     pub fn peek(&self) -> Option<char> {
         self.chars.get(self.pos).copied()
     }
@@ -67,6 +100,7 @@ impl<'a> XPathLexer<'a> {
         }
     }
 
+    /// Scans and returns the next [`Token`].
     pub fn next_token(&mut self) -> Result<Token> {
         self.skip_whitespace();
         let ch = match self.peek() {

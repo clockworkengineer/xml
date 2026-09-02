@@ -1,25 +1,38 @@
+//! # XPath 1.0 Evaluator
+//!
+//! Evaluates [`XPathExpr`] ASTs against a DOM [`Document`] and context node ID.
+
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
 use crate::xpath::ast::{Axis, NodeTest, XPathExpr, XPathOperator};
 
+/// Dynamic value type resulting from an XPath 1.0 expression evaluation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum XPathValue {
+    /// Node-set matching query (`Vec<NodeId>`).
     NodeSet(Vec<NodeId>),
+    /// Boolean result.
     Boolean(bool),
+    /// Numeric result (`f64`).
     Number(f64),
+    /// String result.
     String(String),
 }
 
+/// Evaluator computing XPath ASTs against a DOM [`Document`].
 pub struct XPathEvaluator<'a> {
+    /// Reference to target [`Document`].
     pub doc: &'a Document,
 }
 
 impl<'a> XPathEvaluator<'a> {
+    /// Instantiates a new [`XPathEvaluator`] for a target [`Document`].
     pub fn new(doc: &'a Document) -> Self {
         Self { doc }
     }
 
+    /// Evaluates an [`XPathExpr`] AST relative to a given `context_node` ID.
     pub fn evaluate(&self, expr: &XPathExpr, context_node: NodeId) -> Result<XPathValue> {
         match expr {
             XPathExpr::LiteralString(s) => Ok(XPathValue::String(s.clone())),
@@ -486,6 +499,7 @@ impl<'a> XPathEvaluator<'a> {
         text
     }
 
+    /// Converts an [`XPathValue`] to boolean.
     pub fn to_bool(&self, val: &XPathValue) -> bool {
         match val {
             XPathValue::Boolean(b) => *b,
@@ -495,6 +509,7 @@ impl<'a> XPathEvaluator<'a> {
         }
     }
 
+    /// Converts an [`XPathValue`] to floating-point number.
     pub fn to_number(&self, val: &XPathValue) -> f64 {
         match val {
             XPathValue::Number(n) => *n,
@@ -510,6 +525,7 @@ impl<'a> XPathEvaluator<'a> {
         }
     }
 
+    /// Converts an [`XPathValue`] to string representation.
     pub fn to_string(&self, val: &XPathValue) -> String {
         match val {
             XPathValue::String(s) => s.clone(),

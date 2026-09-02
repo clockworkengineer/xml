@@ -1,94 +1,112 @@
-use crate::error::{Result, XmlError};
-use crate::io::encoding::{decode_to_utf8, detect_bom, normalize_line_endings, Format};
+//! # XML Input Source
+//!
+//! Provides the [`XmlSource`] abstraction reading from string buffers, byte slices, or disk files with line/col tracking.
 
+use crate::error::{Result, XmlError};
+use crate::io::encoding::detect_encoding_and_strip_bom;
+pub use crate::io::encoding::Format;
+
+/// Input source abstraction providing character positioning and BOM auto-detection.
 #[derive(Debug, Clone)]
 pub struct XmlSource {
-    buffer: Vec<char>,
-    position: usize,
+    chars: Vec<char>,
+    pos: usize,
     line: usize,
-    column: usize,
+    col: usize,
     format: Format,
 }
 
 impl XmlSource {
-    pub fn from_string(input: &str) -> Self {
-        let normalized = normalize_line_endings(input);
+    /// Creates an `XmlSource` from an in-memory string slice.
+    pub fn from_string(xml: &str) -> Self {
+        let normalized = xml.replace("\r\n", "\n").replace('\r', "\n");
         Self {
-            buffer: normalized.chars().collect(),
-            position: 0,
+            chars: normalized.chars().collect(),
+            pos: 0,
             line: 1,
-            column: 1,
+            col: 1,
             format: Format::Utf8,
         }
     }
 
+    /// Creates an `XmlSource` from raw bytes, auto-detecting UTF-8/UTF-16 BOM markers.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let (format, bom_offset) = detect_bom(bytes);
-        let utf8_str = decode_to_utf8(bytes, format, bom_offset)?;
-        let normalized = normalize_line_endings(&utf8_str);
+        let (content, format) = detect_encoding_and_strip_bom(bytes)?;
+        let normalized = content.replace("\r\n", "\n").replace('\r', "\n");
         Ok(Self {
-            buffer: normalized.chars().collect(),
-            position: 0,
+            chars: normalized.chars().collect(),
+            pos: 0,
             line: 1,
-            column: 1,
+            col: 1,
             format,
         })
     }
 
+    /// Reads an `XmlSource` from a file path on disk.
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
-        let bytes = std::fs::read(path)?;
+        let bytes = std::fs::read(path.as_ref()).map_err(|e| XmlError::Io(e.to_string()))?;
         Self::from_bytes(&bytes)
     }
 
+    /// Returns the detected encoding format.
     pub fn format(&self) -> Format {
         self.format
     }
 
+    /// Returns the current character position index.
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
+    /// Returns the current 1-based line number.
     pub fn line(&self) -> usize {
         self.line
     }
 
-    pub fn column(&self) -> usize {
-        self.column
+    /// Returns the current 1-based column number.
+    pub fn col(&self) -> usize {
+        self.col
     }
 
-    pub fn position(&self) -> usize {
-        self.position
-    }
-
+    /// Returns `true` if end of source buffer is reached.
     pub fn is_eof(&self) -> bool {
-        self.position >= self.buffer.len()
+        self.pos >= self.chars.len()
     }
 
+    /// Peeks at the current character without advancing cursor position.
     pub fn peek(&self) -> Option<char> {
-        self.buffer.get(self.position).copied()
+        self.chars.get(self.pos).copied()
     }
 
-    pub fn peek_ahead(&self, count: usize) -> Option<char> {
-        self.buffer.get(self.position + count).copied()
+    /// Peeks at character `offset` steps ahead.
+    pub fn peek_offset(&self, offset: usize) -> Option<char> {
+        self.chars.get(self.pos + offset).copied()
     }
 
+    /// Advances and returns the next character, updating line and column counters.
     pub fn next_char(&mut self) -> Option<char> {
-        let ch = self.buffer.get(self.position).copied()?;
-        self.position += 1;
+        let ch = self.chars.get(self.pos).copied()?;
+        self.pos += 1;
         if ch == '\n' {
             self.line += 1;
-            self.column = 1;
+            self.col = 1;
         } else {
-            self.column += 1;
+            self.col += 1;
         }
         Some(ch)
     }
 
+    /// Checks if source starts with expected prefix at current position.
     pub fn starts_with(&self, prefix: &str) -> bool {
         let prefix_chars: Vec<char> = prefix.chars().collect();
-        if self.position + prefix_chars.len() > self.buffer.len() {
+        if self.pos + prefix_chars.len() > self.chars.len() {
             return false;
         }
-        &self.buffer[self.position..self.position + prefix_chars.len()] == prefix_chars.as_slice()
+        self.chars[self.pos..self.pos + prefix_chars.len()] == prefix_chars[..]
     }
 
-    pub fn consume_prefix(&mut self, prefix: &str) -> bool {
+    /// Consumes expected prefix string if present at current position.
+    pub fn consume(&mut self, prefix: &str) -> bool {
         if self.starts_with(prefix) {
             for _ in 0..prefix.chars().count() {
                 self.next_char();
@@ -99,6 +117,7 @@ impl XmlSource {
         }
     }
 
+    /// Skips all leading ASCII whitespace characters.
     pub fn skip_whitespace(&mut self) {
         while let Some(ch) = self.peek() {
             if ch.is_ascii_whitespace() {
@@ -106,14 +125,6 @@ impl XmlSource {
             } else {
                 break;
             }
-        }
-    }
-
-    pub fn syntax_error(&self, message: impl Into<String>) -> XmlError {
-        XmlError::SyntaxError {
-            message: message.into(),
-            line: self.line,
-            col: self.column,
         }
     }
 }

@@ -1,6 +1,11 @@
+//! # Entity Mapper & XXE Security Guard
+//!
+//! Provides predefined entity mapping (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`), numeric reference decoding (`&#65;`, `&#x41;`), and recursive expansion limits.
+
 use std::collections::HashMap;
 use crate::error::{Result, XmlError};
 
+/// Entity table mapping entity reference names to replacement text with depth recursion tracking.
 #[derive(Debug, Clone)]
 pub struct EntityMapper {
     entities: HashMap<String, String>,
@@ -23,20 +28,27 @@ impl Default for EntityMapper {
 }
 
 impl EntityMapper {
+    /// Instantiates a new [`EntityMapper`] with a given max recursion depth limit.
     pub fn new(max_depth: usize) -> Self {
         let mut s = Self::default();
         s.max_depth = max_depth;
         s
     }
 
+    /// Registers a custom entity reference name and replacement value.
     pub fn register(&mut self, name: impl Into<String>, value: impl Into<String>) {
         self.entities.insert(name.into(), value.into());
     }
 
+    /// Looks up an entity reference replacement value by name.
     pub fn get(&self, name: &str) -> Option<&String> {
         self.entities.get(name)
     }
 
+    /// Expands entity references and numeric character references within input string slice.
+    ///
+    /// # Errors
+    /// Returns [`XmlError::SecurityLimitExceeded`] if expansion depth exceeds `max_depth` (XML bomb guard).
     pub fn expand(&self, input: &str) -> Result<String> {
         self.expand_with_depth(input, 0)
     }
@@ -60,7 +72,7 @@ impl EntityMapper {
                     let entity_ref: String = chars[i + 1..semi_idx].iter().collect();
 
                     if entity_ref.starts_with('#') {
-                        // Numeric reference
+                        // Numeric reference (dec or hex)
                         let code_str = &entity_ref[1..];
                         let codepoint = if code_str.starts_with('x') || code_str.starts_with('X') {
                             u32::from_str_radix(&code_str[1..], 16)
@@ -85,6 +97,7 @@ impl EntityMapper {
                             }
                         }
                     } else {
+                        // Named reference
                         match entity_ref.as_str() {
                             "lt" => result.push('<'),
                             "gt" => result.push('>'),

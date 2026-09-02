@@ -1,3 +1,7 @@
+//! # XPath 1.0 Evaluation Subsystem
+//!
+//! Provides the top-level [`XPathEngine`] entry point for evaluating XPath expressions against DOM trees.
+
 pub mod ast;
 pub mod evaluator;
 pub mod lexer;
@@ -12,17 +16,20 @@ use crate::document::Document;
 use crate::error::Result;
 use crate::node::NodeId;
 
+/// Main high-level XPath 1.0 engine interface.
 pub struct XPathEngine<'a> {
     evaluator: XPathEvaluator<'a>,
 }
 
 impl<'a> XPathEngine<'a> {
+    /// Instantiates a new [`XPathEngine`] for a target DOM [`Document`].
     pub fn new(doc: &'a Document) -> Self {
         Self {
             evaluator: XPathEvaluator::new(doc),
         }
     }
 
+    /// Evaluates an XPath expression string against an optional `context_node` ID (defaults to root).
     pub fn evaluate(&self, expression: &str, context_node: Option<NodeId>) -> Result<XPathValue> {
         let mut parser = XPathParser::new(expression)?;
         let expr = parser.parse_expression()?;
@@ -30,6 +37,7 @@ impl<'a> XPathEngine<'a> {
         self.evaluator.evaluate(&expr, ctx)
     }
 
+    /// Evaluates an XPath expression string expecting a Node-Set result (`Vec<NodeId>`).
     pub fn evaluate_nodes(&self, expression: &str, context_node: Option<NodeId>) -> Result<Vec<NodeId>> {
         match self.evaluate(expression, context_node)? {
             XPathValue::NodeSet(ns) => Ok(ns),

@@ -1,63 +1,40 @@
-use crate::io::encoding::Format;
+//! # XML Output Destination
+//!
+//! Provides the [`XmlDestination`] wrapper writing serialized XML into string buffers or standard output writers.
 
-#[derive(Debug, Clone)]
+use std::fmt::Write;
+
+/// Output destination wrapper wrapping a mutable string buffer.
+#[derive(Debug, Default)]
 pub struct XmlDestination {
-    pub buffer: String,
-    pub format: Format,
+    buffer: String,
 }
 
 impl XmlDestination {
-    pub fn new(format: Format) -> Self {
+    /// Creates a new empty [`XmlDestination`].
+    pub fn new() -> Self {
         Self {
             buffer: String::new(),
-            format,
         }
     }
 
+    /// Appends string slice content to destination buffer.
     pub fn write_str(&mut self, s: &str) {
-        self.buffer.push_str(s);
+        let _ = self.buffer.write_str(s);
     }
 
-    pub fn write_char(&mut self, ch: char) {
-        self.buffer.push(ch);
+    /// Appends a single character to destination buffer.
+    pub fn write_char(&mut self, c: char) {
+        self.buffer.push(c);
     }
 
-    pub fn into_bytes(self) -> Vec<u8> {
-        match self.format {
-            Format::Utf8 => self.buffer.into_bytes(),
-            Format::Utf8Bom => {
-                let mut bytes = vec![0xEF, 0xBB, 0xBF];
-                bytes.extend_from_slice(self.buffer.as_bytes());
-                bytes
-            }
-            Format::Utf16Be => {
-                let mut bytes = Vec::new();
-                for u in self.buffer.encode_utf16() {
-                    bytes.extend_from_slice(&u.to_be_bytes());
-                }
-                bytes
-            }
-            Format::Utf16Le => {
-                let mut bytes = Vec::new();
-                for u in self.buffer.encode_utf16() {
-                    bytes.extend_from_slice(&u.to_le_bytes());
-                }
-                bytes
-            }
-            Format::Utf32Be => {
-                let mut bytes = Vec::new();
-                for ch in self.buffer.chars() {
-                    bytes.extend_from_slice(&(ch as u32).to_be_bytes());
-                }
-                bytes
-            }
-            Format::Utf32Le => {
-                let mut bytes = Vec::new();
-                for ch in self.buffer.chars() {
-                    bytes.extend_from_slice(&(ch as u32).to_le_bytes());
-                }
-                bytes
-            }
-        }
+    /// Consumes destination and returns accumulated string buffer.
+    pub fn into_string(self) -> String {
+        self.buffer
+    }
+
+    /// Returns string slice reference to destination content.
+    pub fn as_str(&self) -> &str {
+        &self.buffer
     }
 }

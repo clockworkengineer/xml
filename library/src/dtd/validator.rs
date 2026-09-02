@@ -1,30 +1,48 @@
+//! # DTD Validation Engine
+//!
+//! Parses DTD internal subsets (`<!ELEMENT>`, `<!ATTLIST>`) and validates document structure and required attributes.
+
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
 use std::collections::HashMap;
 
+/// Representation of DTD element content models.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentModel {
+    /// Declared `EMPTY` (no child elements or text content allowed).
     Empty,
+    /// Declared `ANY` (any element or text child allowed).
     Any,
+    /// Mixed content model (`(#PCDATA | a | b)*`).
     Mixed(Vec<String>),
+    /// Child element sequence model.
     Children(String),
 }
 
+/// DTD element content declaration rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DtdElementRule {
+    /// Element tag name.
     pub name: String,
+    /// Content model rule.
     pub model: ContentModel,
 }
 
+/// DTD attribute declaration rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DtdAttributeRule {
+    /// Associated element tag name.
     pub element_name: String,
+    /// Attribute key name.
     pub attr_name: String,
+    /// Attribute type (`CDATA`, `ID`, etc.).
     pub attr_type: String,
+    /// Default declaration (`#REQUIRED`, `#IMPLIED`, `#FIXED`).
     pub default_decl: String,
 }
 
+/// DTD validator enforcing element content model and attribute constraints.
 #[derive(Debug, Clone, Default)]
 pub struct DtdValidator {
     elements: HashMap<String, DtdElementRule>,
@@ -32,10 +50,12 @@ pub struct DtdValidator {
 }
 
 impl DtdValidator {
+    /// Instantiates a new empty [`DtdValidator`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Parses internal DTD subset string (`<!ELEMENT ...>` and `<!ATTLIST ...>`).
     pub fn parse_subset(&mut self, subset: &str) -> Result<()> {
         let lines = subset.lines();
         for raw_line in lines {
@@ -85,6 +105,7 @@ impl DtdValidator {
         Ok(())
     }
 
+    /// Validates a [`Document`] against loaded DTD rules.
     pub fn validate(&self, doc: &Document) -> Result<()> {
         if let Some(dtd_id) = doc.dtd_id() {
             if let Some(node) = doc.get_node(dtd_id) {
@@ -131,7 +152,6 @@ impl DtdValidator {
                         }
                     }
                     ContentModel::Children(spec) => {
-                        // Extract element names of direct children
                         let child_names: Vec<String> = node.children.iter().filter_map(|&c_id| {
                             doc.get_node(c_id).and_then(|c| match &c.kind {
                                 NodeKind::Element { name, .. } => Some(name.clone()),
@@ -139,9 +159,7 @@ impl DtdValidator {
                             })
                         }).collect();
 
-                        // Basic child specification matching
                         if spec.contains(',') && !spec.contains('*') && !spec.contains('?') {
-                            // Required sequence like (to,from,heading,body)
                             let required_names: Vec<String> = spec
                                 .trim_matches(|c| c == '(' || c == ')' || c == '>' || c == ' ')
                                 .split(',')

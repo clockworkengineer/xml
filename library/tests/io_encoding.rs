@@ -53,11 +53,11 @@ fn test_line_ending_normalization() {
 
 #[test]
 fn test_xml_destination() {
-    let mut dest = XmlDestination::new(Format::Utf8);
+    let mut dest = XmlDestination::new();
     dest.write_str("<test>");
     dest.write_str("Content");
     dest.write_str("</test>");
 
-    let output = dest.buffer;
+    let output = dest.into_string();
     assert_eq!(output, "<test>Content</test>");
 }

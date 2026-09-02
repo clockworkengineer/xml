@@ -429,9 +429,9 @@ fn test_variant_node_types() {
     let elem = doc.add_node(NodeKind::Element { name: "test".to_string(), attributes: vec![] });
     let text = doc.add_node(NodeKind::Text("text".to_string()));
 
-    assert_eq!(doc.get_node(prolog).unwrap().kind.name(), "Prolog");
+    assert_eq!(doc.get_node(prolog).unwrap().kind.name(), "#prolog");
     assert_eq!(doc.get_node(elem).unwrap().kind.name(), "test");
-    assert_eq!(doc.get_node(text).unwrap().kind.name(), "Text");
+    assert_eq!(doc.get_node(text).unwrap().kind.name(), "#text");
 
     // Parent / Child relationship
     doc.append_child(elem, text).unwrap();

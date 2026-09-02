@@ -1,13 +1,19 @@
+//! # XPath 1.0 Parser
+//!
+//! Operator precedence and recursive descent parser transforming token streams into [`XPathExpr`] ASTs.
+
 use crate::error::{Result, XmlError};
 use crate::xpath::ast::{Axis, NodeTest, XPathExpr, XPathOperator};
 use crate::xpath::lexer::{Token, XPathLexer};
 
+/// XPath AST parser instance.
 pub struct XPathParser<'a> {
     lexer: XPathLexer<'a>,
     current: Token,
 }
 
 impl<'a> XPathParser<'a> {
+    /// Instantiates a new [`XPathParser`] for an XPath expression string slice.
     pub fn new(input: &'a str) -> Result<Self> {
         let mut lexer = XPathLexer::new(input);
         let current = lexer.next_token()?;
@@ -20,6 +26,7 @@ impl<'a> XPathParser<'a> {
         Ok(prev)
     }
 
+    /// Parses the top-level XPath expression into an [`XPathExpr`] AST.
     pub fn parse_expression(&mut self) -> Result<XPathExpr> {
         self.parse_or_expr()
     }
@@ -269,7 +276,6 @@ impl<'a> XPathParser<'a> {
                     self.advance()?;
                     axis = ax;
                 } else {
-                    // It was a node name matching axis keyword
                     return self.finish_step_with_name(axis, name_str);
                 }
             }

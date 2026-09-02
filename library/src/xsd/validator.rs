@@ -1,37 +1,57 @@
+//! # XSD Schema Validator
+//!
+//! Parses XSD schema documents (`xs:schema`) and validates DOM documents against elements, types, and restriction facets.
+
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
 use std::collections::HashMap;
 
+/// XSD simple type restriction facets.
 #[derive(Debug, Clone, Default)]
 pub struct XsdRestriction {
+    /// Minimum inclusive numeric bound (`xs:minInclusive`).
     pub min_inclusive: Option<i64>,
+    /// Maximum inclusive numeric bound (`xs:maxInclusive`).
     pub max_inclusive: Option<i64>,
+    /// Minimum string character length (`xs:minLength`).
     pub min_length: Option<usize>,
+    /// Maximum string character length (`xs:maxLength`).
     pub max_length: Option<usize>,
+    /// Allowed enumeration values (`xs:enumeration`).
     pub enumerations: Vec<String>,
+    /// Pattern regex/string restriction (`xs:pattern`).
     pub pattern: Option<String>,
 }
 
+/// XSD schema element declaration rule.
 #[derive(Debug, Clone)]
 pub struct XsdElementRule {
+    /// Element name.
     pub name: String,
+    /// Type declaration (`xs:string`, `xs:integer`, `xs:boolean`, etc.).
     pub elem_type: String,
+    /// Minimum occurrences.
     pub min_occurs: usize,
+    /// Maximum occurrences (None = unbounded).
     pub max_occurs: Option<usize>,
+    /// Associated restriction facets.
     pub restriction: XsdRestriction,
 }
 
+/// XSD Schema Validator.
 #[derive(Debug, Clone, Default)]
 pub struct XsdValidator {
     elements: HashMap<String, XsdElementRule>,
 }
 
 impl XsdValidator {
+    /// Instantiates a new [`XsdValidator`].
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Parses an XSD schema string slice (`<xs:schema ...>`).
     pub fn parse_schema(&mut self, schema_xml: &str) -> Result<()> {
         let source = crate::io::source::XmlSource::from_string(schema_xml);
         let options = crate::options::ParseOptions::default();
@@ -131,6 +151,7 @@ impl XsdValidator {
         rest
     }
 
+    /// Validates a DOM [`Document`] against loaded XSD schema rules.
     pub fn validate(&self, doc: &Document) -> Result<()> {
         if let Some(root_id) = doc.root_element_id() {
             self.validate_element(doc, root_id)?;

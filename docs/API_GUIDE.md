@@ -41,11 +41,33 @@ let utf16_le_bytes: &[u8] = &[0xFF, 0xFE, 0x3C, 0x00, 0x72, 0x00, 0x6F, 0x00, 0x
 let doc = parse_bytes(utf16_le_bytes)?;
 ```
 
-### `parse_with_options(xml: &str, options: ParseOptions) -> Result<Document>`
-Parses XML with custom security thresholds.
+### `parse_file(path: impl AsRef<Path>) -> Result<Document>`
+Reads an XML file directly from disk path, auto-detects BOM encodings (UTF-8, UTF-16 LE, UTF-16 BE), normalizes line endings, and parses into a `Document`.
 
 ```rust
-use xml_lib::{parse_with_options, ParseOptions};
+use xml_lib_rust::parse_file;
+
+let doc = parse_file("data/sample.xml")?;
+assert!(!doc.is_empty());
+```
+
+### `parse_file_with_options(path: impl AsRef<Path>, options: ParseOptions) -> Result<Document>`
+Reads an XML file from disk path and parses with custom security options.
+
+```rust
+use xml_lib_rust::{parse_file_with_options, ParseOptions};
+
+let mut options = ParseOptions::default();
+options.max_nesting_depth = 50;
+
+let doc = parse_file_with_options("large_file.xml", options)?;
+```
+
+### `parse_with_options(xml: &str, options: ParseOptions) -> Result<Document>`
+Parses XML string slice with custom security thresholds.
+
+```rust
+use xml_lib_rust::{parse_with_options, ParseOptions};
 
 let mut options = ParseOptions::default();
 options.max_nesting_depth = 50;

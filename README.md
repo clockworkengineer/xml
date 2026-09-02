@@ -59,11 +59,11 @@ xml_lib_rust = { version = "1.2.0", default-features = false, features = ["alloc
 
 ### 1. Basic Parsing & DOM Navigation
 ```rust
-use xml_lib::{parse, NodeKind};
+use xml_lib_rust::{parse, parse_file, NodeKind};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let xml = r#"<catalog><book id="b1"><title>Rust Guide</title></book></catalog>"#;
-    let doc = parse(xml)?;
+    // Parse in-memory XML string or parse directly from file path on disk
+    let doc = parse_file("data/sample.xml")?;
 
     let root_id = doc.root_element_id().expect("Root element");
     println!("Root tag name: {}", doc.get_node(root_id).unwrap().kind.name());

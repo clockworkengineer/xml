@@ -31,14 +31,14 @@ Add `xml_lib_rust` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-xml_lib_rust = "1.2.0"
+xml_lib_rust = "1.2.1"
 ```
 
 For bare-metal `#![no_std]` embedded targets:
 
 ```toml
 [dependencies]
-xml_lib_rust = { version = "1.2.0", default-features = false, features = ["alloc", "small_nodes"] }
+xml_lib_rust = { version = "1.2.1", default-features = false, features = ["alloc", "small_nodes"] }
 ```
 
 ### Feature Flags

@@ -73,13 +73,11 @@ impl<'a> XPathEvaluator<'a> {
                     let mut next_nodes = Vec::new();
                     for &ctx in &current_nodes {
                         if let XPathValue::NodeSet(ns) = self.evaluate(step, ctx)? {
-                            for nid in ns {
-                                if !next_nodes.contains(&nid) {
-                                    next_nodes.push(nid);
-                                }
-                            }
+                            next_nodes.extend(ns);
                         }
                     }
+                    next_nodes.sort_unstable();
+                    next_nodes.dedup();
                     current_nodes = next_nodes;
                 }
                 Ok(XPathValue::NodeSet(current_nodes))
@@ -166,7 +164,7 @@ impl<'a> XPathEvaluator<'a> {
             }
             Axis::Following => {
                 let mut nodes = Vec::new();
-                for id in context_node + 1..self.doc.len() {
+                for id in context_node + 1..self.doc.len() as u32 {
                     nodes.push(id);
                 }
                 nodes
@@ -267,11 +265,9 @@ impl<'a> XPathEvaluator<'a> {
                     XPathValue::NodeSet(ns) => ns,
                     _ => Vec::new(),
                 };
-                for nid in ns2 {
-                    if !ns1.contains(&nid) {
-                        ns1.push(nid);
-                    }
-                }
+                ns1.extend(ns2);
+                ns1.sort_unstable();
+                ns1.dedup();
                 Ok(XPathValue::NodeSet(ns1))
             }
         }

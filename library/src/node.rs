@@ -2,8 +2,8 @@
 //!
 //! Defines memory-optimized node kinds, boxed attributes, arena node indices, and node metadata.
 
-/// Unique index identifier for a node within the arena [`Vec<NodeData>`].
-pub type NodeId = usize;
+/// Unique index identifier for a node within the arena [`Vec<NodeData>`]. Compact `u32` footprint (supports 4.2 billion nodes).
+pub type NodeId = u32;
 
 /// Key-value attribute pair on an XML Element tag stored with compact boxed strings (`Box<str>`).
 #[derive(Debug, Clone, PartialEq, Eq)]

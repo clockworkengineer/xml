@@ -444,15 +444,16 @@ impl<'a> XmlParser<'a> {
 
     /// Helper parsing an identifier / tag name string.
     fn parse_name(&mut self) -> Result<String> {
-        let mut name = String::new();
+        let start = self.source.position();
         while let Some(ch) = self.source.peek() {
             if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == ':' || ch == '.' {
-                name.push(self.source.next_char().unwrap());
+                self.source.next_char();
             } else {
                 break;
             }
         }
-        Ok(name)
+        let end = self.source.position();
+        Ok(self.source.slice_range(start, end).to_string())
     }
 
     /// Helper parsing a single- or double-quoted string.

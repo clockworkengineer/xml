@@ -66,6 +66,11 @@ impl XmlSource {
         self.pos
     }
 
+    /// Returns a string slice of the underlying content for a given byte range.
+    pub fn slice_range(&self, start: usize, end: usize) -> &str {
+        &self.content[start..end]
+    }
+
     /// Returns the current 1-based line number.
     pub fn line(&self) -> usize {
         self.line

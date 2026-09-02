@@ -43,31 +43,33 @@ impl Document {
 
     /// Appends a new node kind to the arena and returns its unique [`NodeId`].
     pub fn add_node(&mut self, kind: NodeKind) -> NodeId {
-        let id = self.nodes.len();
+        let id = self.nodes.len() as NodeId;
         self.nodes.push(NodeData::new(id, kind));
         id
     }
 
     /// Links a child node to a parent node within the arena.
     pub fn append_child(&mut self, parent_id: NodeId, child_id: NodeId) -> Result<()> {
-        if parent_id >= self.nodes.len() || child_id >= self.nodes.len() {
+        let p_idx = parent_id as usize;
+        let c_idx = child_id as usize;
+        if p_idx >= self.nodes.len() || c_idx >= self.nodes.len() {
             return Err(XmlError::NodeError("Invalid Node ID".into()));
         }
-        self.nodes[child_id].parent = Some(parent_id);
-        if !self.nodes[parent_id].children.contains(&child_id) {
-            self.nodes[parent_id].children.push(child_id);
+        self.nodes[c_idx].parent = Some(parent_id);
+        if !self.nodes[p_idx].children.contains(&child_id) {
+            self.nodes[p_idx].children.push(child_id);
         }
         Ok(())
     }
 
     /// Immutable lookup for a node by ID.
     pub fn get_node(&self, id: NodeId) -> Option<&NodeData> {
-        self.nodes.get(id)
+        self.nodes.get(id as usize)
     }
 
     /// Mutable lookup for a node by ID.
     pub fn get_node_mut(&mut self, id: NodeId) -> Option<&mut NodeData> {
-        self.nodes.get_mut(id)
+        self.nodes.get_mut(id as usize)
     }
 
     /// Returns the ID of the root virtual container node.

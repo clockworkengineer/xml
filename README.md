@@ -31,14 +31,14 @@ Add `xml_lib` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-xml_lib = "1.2.0"
+xml_lib = "0.1.0"
 ```
 
 For bare-metal `#![no_std]` embedded targets:
 
 ```toml
 [dependencies]
-xml_lib = { version = "1.2.0", default-features = false, features = ["alloc", "small_nodes"] }
+xml_lib = { version = "0.1.0", default-features = false, features = ["alloc", "small_nodes"] }
 ```
 
 ### Feature Flags

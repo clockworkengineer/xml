@@ -159,6 +159,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
+## Support & Sponsorship
+
+If you find `xml_lib` helpful for your Rust projects, consider supporting its development!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-yellow.svg?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/roberttizz1)
+
+Support the project on [Buy Me a Coffee](https://buymeacoffee.com/roberttizz1).
+
+---
+
 ## License
 
 Distributed under the [MIT License](LICENSE).

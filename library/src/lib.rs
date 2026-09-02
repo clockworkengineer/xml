@@ -8,6 +8,11 @@
 //! - XSD Schema & Restriction Facet Validation (`XsdValidator`)
 //! - XPath 1.0 Lexing, Parsing, and Evaluation Engine (`XPathEngine`)
 
+#![cfg_attr(not(feature = "std"), no_std)]
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+pub mod alloc_prelude;
 pub mod document;
 pub mod dtd;
 pub mod entity;
@@ -21,6 +26,8 @@ pub mod validator;
 pub mod xsd;
 pub mod xpath;
 
+use crate::alloc_prelude::*;
+
 pub use document::Document;
 pub use dtd::DtdValidator;
 pub use entity::{EntityMapper, EntityResolver};
@@ -28,7 +35,7 @@ pub use error::{Result, XmlError};
 pub use io::{Format, XmlDestination, XmlSource};
 pub use node::{Attribute, NodeData, NodeId, NodeKind};
 pub use options::ParseOptions;
-pub use parser::XmlParser;
+pub use parser::{XmlParser, XmlPullAttribute, XmlPullEvent, XmlPullParser};
 pub use stringify::{SerializeOptions, XmlSerializer};
 pub use validator::XmlValidator;
 pub use xsd::XsdValidator;

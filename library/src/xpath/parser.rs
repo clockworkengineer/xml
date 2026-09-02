@@ -2,6 +2,7 @@
 //!
 //! Operator precedence and recursive descent parser transforming token streams into [`XPathExpr`] ASTs.
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 use crate::xpath::ast::{Axis, NodeTest, XPathExpr, XPathOperator};
 use crate::xpath::lexer::{Token, XPathLexer};
@@ -21,7 +22,7 @@ impl<'a> XPathParser<'a> {
     }
 
     fn advance(&mut self) -> Result<Token> {
-        let prev = std::mem::replace(&mut self.current, Token::Eof);
+        let prev = core::mem::replace(&mut self.current, Token::Eof);
         self.current = self.lexer.next_token()?;
         Ok(prev)
     }

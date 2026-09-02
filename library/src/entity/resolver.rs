@@ -2,6 +2,7 @@
 //!
 //! Trait definition for custom resolution of external system or public entity URIs.
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 
 /// Trait implemented by external entity resolvers (e.g. file system or network entity loaders).

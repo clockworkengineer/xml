@@ -2,25 +2,26 @@
 //!
 //! Auto-detects UTF-8 / UTF-16 Byte Order Marks (BOM) and decodes raw byte slices into UTF-8 string buffers.
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 
-/// Detected character encoding format and BOM configuration.
+/// Enum representing supported byte encoding formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
-    /// Standard UTF-8 without BOM.
+    /// UTF-8 encoding (default).
     Utf8,
     /// UTF-8 with Byte Order Mark (`EF BB BF`).
     Utf8Bom,
-    /// UTF-16 Little Endian (`FF FE`).
+    /// UTF-16 Little Endian encoding.
     Utf16Le,
-    /// UTF-16 Big Endian (`FE FF`).
+    /// UTF-16 Big Endian encoding.
     Utf16Be,
 }
 
-/// Inspects byte slice leading bytes, strips BOM marker if present, and decodes content into UTF-8 [`String`].
+/// Detects Byte Order Mark (BOM) preamble from raw bytes and returns normalized UTF-8 string.
 pub fn detect_encoding_and_strip_bom(bytes: &[u8]) -> Result<(String, Format)> {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        let content = std::str::from_utf8(&bytes[3..])
+        let content = core::str::from_utf8(&bytes[3..])
             .map_err(|e| XmlError::Io(format!("Invalid UTF-8 after BOM: {e}")))?;
         Ok((content.to_string(), Format::Utf8Bom))
     } else if bytes.starts_with(&[0xFF, 0xFE]) {
@@ -40,7 +41,7 @@ pub fn detect_encoding_and_strip_bom(bytes: &[u8]) -> Result<(String, Format)> {
             .map_err(|e| XmlError::Io(format!("Invalid UTF-16 BE data: {e}")))?;
         Ok((content, Format::Utf16Be))
     } else {
-        let content = std::str::from_utf8(bytes)
+        let content = core::str::from_utf8(bytes)
             .map_err(|e| XmlError::Io(format!("Invalid UTF-8 data: {e}")))?;
         Ok((content.to_string(), Format::Utf8))
     }

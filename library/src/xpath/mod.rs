@@ -12,6 +12,7 @@ pub use evaluator::{XPathEvaluator, XPathValue};
 pub use lexer::{Token, XPathLexer};
 pub use parser::XPathParser;
 
+use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::error::Result;
 use crate::node::NodeId;

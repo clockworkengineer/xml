@@ -2,6 +2,8 @@
 //!
 //! Abstract Syntax Tree types representing XPath expressions, operators, node tests, and 13 XPath axes.
 
+use crate::alloc_prelude::*;
+
 /// Enum representing all 13 standard XPath 1.0 axes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {

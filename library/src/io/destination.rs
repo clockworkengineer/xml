@@ -2,7 +2,8 @@
 //!
 //! Provides the [`XmlDestination`] wrapper writing serialized XML into string buffers or standard output writers.
 
-use std::fmt::Write;
+use crate::alloc_prelude::*;
+use core::fmt::Write;
 
 /// Output destination wrapper wrapping a mutable string buffer.
 #[derive(Debug, Default)]

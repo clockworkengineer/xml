@@ -2,6 +2,7 @@
 //!
 //! Provides the zero-copy [`XmlSource`] abstraction reading directly from UTF-8 string slices with line/col tracking.
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 use crate::io::encoding::detect_encoding_and_strip_bom;
 pub use crate::io::encoding::Format;
@@ -51,6 +52,7 @@ impl XmlSource {
     }
 
     /// Reads an `XmlSource` from a file path on disk.
+    #[cfg(feature = "std")]
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let bytes = std::fs::read(path.as_ref()).map_err(|e| XmlError::Io(e.to_string()))?;
         Self::from_bytes(&bytes)

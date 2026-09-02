@@ -2,6 +2,7 @@
 //!
 //! Evaluates [`XPathExpr`] ASTs against a DOM [`Document`] and context node ID.
 
+use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
@@ -160,7 +161,7 @@ impl<'a> XPathEvaluator<'a> {
             }
             Axis::Following => {
                 let mut nodes = Vec::new();
-                for id in context_node + 1..self.doc.len() as u32 {
+                for id in context_node + 1..self.doc.len() as NodeId {
                     nodes.push(id);
                 }
                 nodes
@@ -453,21 +454,21 @@ impl<'a> XPathEvaluator<'a> {
                     return Err(XmlError::XPathError("floor() expects 1 argument".into()));
                 }
                 let num = self.to_number(&self.evaluate(&args[0], ctx)?);
-                Ok(XPathValue::Number(num.floor()))
+                Ok(XPathValue::Number(floor_f64(num)))
             }
             "ceiling" => {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("ceiling() expects 1 argument".into()));
                 }
                 let num = self.to_number(&self.evaluate(&args[0], ctx)?);
-                Ok(XPathValue::Number(num.ceil()))
+                Ok(XPathValue::Number(ceil_f64(num)))
             }
             "round" => {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("round() expects 1 argument".into()));
                 }
                 let num = self.to_number(&self.evaluate(&args[0], ctx)?);
-                Ok(XPathValue::Number(num.round()))
+                Ok(XPathValue::Number(round_f64(num)))
             }
             "true" => Ok(XPathValue::Boolean(true)),
             "false" => Ok(XPathValue::Boolean(false)),
@@ -532,4 +533,38 @@ impl<'a> XPathEvaluator<'a> {
             }
         }
     }
+}
+
+#[cfg(feature = "std")]
+fn floor_f64(n: f64) -> f64 {
+    n.floor()
+}
+
+#[cfg(not(feature = "std"))]
+fn floor_f64(n: f64) -> f64 {
+    (n as i64) as f64
+}
+
+#[cfg(feature = "std")]
+fn ceil_f64(n: f64) -> f64 {
+    n.ceil()
+}
+
+#[cfg(not(feature = "std"))]
+fn ceil_f64(n: f64) -> f64 {
+    if n > (n as i64) as f64 {
+        (n as i64 + 1) as f64
+    } else {
+        (n as i64) as f64
+    }
+}
+
+#[cfg(feature = "std")]
+fn round_f64(n: f64) -> f64 {
+    n.round()
+}
+
+#[cfg(not(feature = "std"))]
+fn round_f64(n: f64) -> f64 {
+    (n + 0.5) as i64 as f64
 }

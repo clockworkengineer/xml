@@ -2,11 +2,16 @@
 //!
 //! Parses XSD schema documents (`xs:schema`) and validates DOM documents against elements, types, and restriction facets.
 
+use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
 use crate::validator::XmlValidator;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
 
 /// XSD simple type restriction facets.
 #[derive(Debug, Clone, Default)]

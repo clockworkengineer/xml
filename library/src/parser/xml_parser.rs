@@ -2,6 +2,7 @@
 //!
 //! Recursive descent XML parser turning character streams ([`XmlSource`]) into DOM trees ([`Document`]).
 
+use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::entity::EntityMapper;
 use crate::error::{Result, XmlError};
@@ -17,7 +18,7 @@ pub struct XmlParser<'a> {
     entity_mapper: EntityMapper,
     element_count: usize,
     total_attribute_count: usize,
-    _phantom: std::marker::PhantomData<&'a ()>,
+    _phantom: core::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> XmlParser<'a> {
@@ -30,7 +31,7 @@ impl<'a> XmlParser<'a> {
             entity_mapper: mapper,
             element_count: 0,
             total_attribute_count: 0,
-            _phantom: std::marker::PhantomData,
+            _phantom: core::marker::PhantomData,
         }
     }
 

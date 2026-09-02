@@ -2,8 +2,13 @@
 //!
 //! Provides predefined entity mapping (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`), numeric reference decoding (`&#65;`, `&#x41;`), and recursive expansion limits.
 
-use std::collections::HashMap;
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
 
 /// Standard XML 1.0 predefined entity table mappings `(name, replacement)`.
 pub const PREDEFINED_ENTITIES: &[(&str, &str)] = &[

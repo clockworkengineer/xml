@@ -2,6 +2,7 @@
 //!
 //! Tokenizes raw XPath expression strings into discrete tokens ([`Token`]).
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 use crate::io::{is_xml_name_char, is_xml_name_start};
 

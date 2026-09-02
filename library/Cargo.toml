@@ -8,12 +8,14 @@ license = "MIT"
 
 [features]
 default = ["std", "dtd", "xsd", "xpath", "stringify"]
-std = []
+std = ["alloc"]
+alloc = []
 dtd = []
 xsd = []
 xpath = []
 stringify = []
 embedded = []
+small_nodes = []
 
 [dependencies]
 thiserror = "1.0"

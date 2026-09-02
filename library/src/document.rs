@@ -2,6 +2,7 @@
 //!
 //! Provides the primary [`Document`] container representing an XML DOM tree stored in a flat arena vector.
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeData, NodeId, NodeKind};
 

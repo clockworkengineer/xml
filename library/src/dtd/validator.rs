@@ -2,11 +2,16 @@
 //!
 //! Parses DTD internal subsets (`<!ELEMENT>`, `<!ATTLIST>`) and validates document structure and required attributes.
 
+use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
 use crate::validator::XmlValidator;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
 
 /// Representation of DTD element content models.
 #[derive(Debug, Clone, PartialEq, Eq)]

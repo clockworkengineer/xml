@@ -2,6 +2,7 @@
 //!
 //! Formats and serializes a [`Document`] DOM tree back into valid XML string output with optional pretty printing.
 
+use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::io::destination::XmlDestination;
 use crate::node::{NodeId, NodeKind};

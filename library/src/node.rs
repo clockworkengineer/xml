@@ -1,9 +1,13 @@
-//! # Node Data Types
-//!
-//! Defines memory-optimized node kinds, boxed attributes, arena node indices, and node metadata.
+use crate::alloc_prelude::*;
 
-/// Unique index identifier for a node within the arena [`Vec<NodeData>`]. Compact `u32` footprint (supports 4.2 billion nodes).
+/// Unique index identifier for a node within the arena [`Vec<NodeData>`].
+/// Default `u32` supports up to 4.2 billion nodes. Enabling `features = ["small_nodes"]` uses `u16` (max 65,535 nodes) for ultra-low memory microcontrollers.
+#[cfg(not(feature = "small_nodes"))]
 pub type NodeId = u32;
+
+/// Compact 16-bit node index identifier for microcontrollers with <64K nodes.
+#[cfg(feature = "small_nodes")]
+pub type NodeId = u16;
 
 /// Key-value attribute pair on an XML Element tag stored with compact boxed strings (`Box<str>`).
 #[derive(Debug, Clone, PartialEq, Eq)]

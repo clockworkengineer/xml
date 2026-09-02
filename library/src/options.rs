@@ -2,6 +2,7 @@
 //!
 //! Provides configurable parsing options and security thresholds to mitigate DoS and XXE vulnerabilities.
 
+use crate::alloc_prelude::*;
 use crate::error::{Result, XmlError};
 
 /// Security policy options and resource limits for the XML parser.

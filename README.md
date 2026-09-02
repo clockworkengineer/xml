@@ -27,18 +27,18 @@ A high-performance, full-featured, pure Rust XML parsing, validation, stringific
 
 ## Cargo Setup & Feature Flags
 
-Add `xml_lib` to your `Cargo.toml`:
+Add `xml_lib_rust` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-xml_lib = "0.1.0"
+xml_lib_rust = "1.2.0"
 ```
 
 For bare-metal `#![no_std]` embedded targets:
 
 ```toml
 [dependencies]
-xml_lib = { version = "0.1.0", default-features = false, features = ["alloc", "small_nodes"] }
+xml_lib_rust = { version = "1.2.0", default-features = false, features = ["alloc", "small_nodes"] }
 ```
 
 ### Feature Flags

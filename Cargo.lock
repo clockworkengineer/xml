@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "xml_lib"
-version = "0.1.0"
+version = "1.2.0"
 dependencies = [
  "criterion",
  "thiserror",

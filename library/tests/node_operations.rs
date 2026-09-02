@@ -1,4 +1,4 @@
-use xml_lib::{
+use xml_lib_rust::{
     Attribute, Document, NodeKind, parse,
     EntityMapper, DtdValidator,
 };
@@ -99,7 +99,7 @@ fn test_cdata_stringify_output() {
     doc.append_child(elem_id, cdata_id).unwrap();
     doc.append_child(root_id, elem_id).unwrap();
 
-    let output = xml_lib::stringify(&doc);
+    let output = xml_lib_rust::stringify(&doc);
     assert!(output.contains("<![CDATA[<raw>&data</raw>]]>"));
 }
 
@@ -127,7 +127,7 @@ fn test_comment_stringify_output() {
     });
     doc.append_child(root_id, elem_id).unwrap();
 
-    let output = xml_lib::stringify(&doc);
+    let output = xml_lib_rust::stringify(&doc);
     assert!(output.contains("<!--Header comment-->"));
 }
 
@@ -193,7 +193,7 @@ fn test_declaration_stringify_output() {
     });
     doc.append_child(root_id, elem_id).unwrap();
 
-    let output = xml_lib::stringify(&doc);
+    let output = xml_lib_rust::stringify(&doc);
     assert!(output.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"));
 }
 

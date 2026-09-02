@@ -1,4 +1,4 @@
-use xml_lib::{parse, XsdValidator};
+use xml_lib_rust::{parse, XsdValidator};
 
 #[test]
 fn test_xsd_simple_string_validation() {

@@ -78,3 +78,30 @@ pub fn parse_bytes(bytes: &[u8]) -> Result<Document> {
 pub fn stringify(doc: &Document) -> String {
     XmlSerializer::serialize_to_string(doc, &SerializeOptions::default())
 }
+
+/// Parse an XML file from disk into a DOM `Document` with automatic UTF-8 / UTF-16 BOM detection.
+///
+/// # Arguments
+/// * `path` - Path to target XML file on disk (`impl AsRef<std::path::Path>`).
+///
+/// # Errors
+/// Returns [`XmlError::Io`] if reading the file fails, or [`XmlError::SyntaxError`] if XML is malformed.
+#[cfg(feature = "std")]
+pub fn parse_file(path: impl AsRef<std::path::Path>) -> Result<Document> {
+    parse_file_with_options(path, ParseOptions::default())
+}
+
+/// Parse an XML file from disk into a DOM `Document` with custom security options.
+///
+/// # Arguments
+/// * `path` - Path to target XML file on disk (`impl AsRef<std::path::Path>`).
+/// * `options` - Custom [`ParseOptions`] configuring depth limits and attribute thresholds.
+#[cfg(feature = "std")]
+pub fn parse_file_with_options(
+    path: impl AsRef<std::path::Path>,
+    options: ParseOptions,
+) -> Result<Document> {
+    let source = XmlSource::from_file(path)?;
+    let mut parser = XmlParser::new(source, options);
+    parser.parse()
+}

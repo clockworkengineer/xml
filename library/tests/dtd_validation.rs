@@ -1,4 +1,4 @@
-use xml_lib::{parse, DtdValidator};
+use xml_lib_rust::{parse, DtdValidator};
 
 #[test]
 fn test_dtd_validation() {

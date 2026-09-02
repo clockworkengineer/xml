@@ -3,7 +3,7 @@
 //! Demonstrates evaluating XPath attribute predicates (`[@category='web']`)
 //! and positional index predicates (`[1]`) using `XPathEngine`.
 
-use xml_lib::{parse, XPathEngine};
+use xml_lib_rust::{parse, XPathEngine};
 
 fn main() {
     println!("--- XPath Predicates Example ---");

@@ -3,7 +3,7 @@
 //! Demonstrates parsing entity references (`&amp;`, `&lt;`, `&quot;`), numeric character references
 //! (`&#65;`, `&#x42;`), and registering custom entity mappings via `EntityMapper`.
 
-use xml_lib::{parse, EntityMapper};
+use xml_lib_rust::{parse, EntityMapper};
 
 fn main() {
     println!("--- XML Entity Reference Example ---");

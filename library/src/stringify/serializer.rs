@@ -197,7 +197,7 @@ impl XmlSerializer {
         }
     }
 
-    fn write_escaped_text(s: &str, dest: &mut XmlDestination) {
+    fn write_escaped(s: &str, escape_quotes: bool, dest: &mut XmlDestination) {
         let mut last = 0;
         let bytes = s.as_bytes();
         for (i, &b) in bytes.iter().enumerate() {
@@ -205,6 +205,7 @@ impl XmlSerializer {
                 b'&' => "&amp;",
                 b'<' => "&lt;",
                 b'>' => "&gt;",
+                b'"' if escape_quotes => "&quot;",
                 _ => continue,
             };
             dest.write_str(&s[last..i]);
@@ -214,21 +215,11 @@ impl XmlSerializer {
         dest.write_str(&s[last..]);
     }
 
+    fn write_escaped_text(s: &str, dest: &mut XmlDestination) {
+        Self::write_escaped(s, false, dest);
+    }
+
     fn write_escaped_attr(s: &str, dest: &mut XmlDestination) {
-        let mut last = 0;
-        let bytes = s.as_bytes();
-        for (i, &b) in bytes.iter().enumerate() {
-            let esc = match b {
-                b'&' => "&amp;",
-                b'<' => "&lt;",
-                b'>' => "&gt;",
-                b'"' => "&quot;",
-                _ => continue,
-            };
-            dest.write_str(&s[last..i]);
-            dest.write_str(esc);
-            last = i + 1;
-        }
-        dest.write_str(&s[last..]);
+        Self::write_escaped(s, true, dest);
     }
 }

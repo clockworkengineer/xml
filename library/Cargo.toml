@@ -1,10 +1,13 @@
 [package]
 name = "xml_lib"
-version = "0.1.0"
+version = "1.2.0"
 edition = "2021"
 authors = ["ClockworkEngineer", "Rust Port Team"]
 description = "Full-featured XML parser, validator, stringifier, and XPath 1.0 engine in pure Rust"
 license = "MIT"
+repository = "https://github.com/clockworkengineer/xml"
+documentation = "https://docs.rs/xml_lib"
+readme = "../README.md"
 
 [features]
 default = ["std", "dtd", "xsd", "xpath", "stringify"]

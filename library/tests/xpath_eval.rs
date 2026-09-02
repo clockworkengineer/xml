@@ -82,6 +82,49 @@ fn test_xpath_predicates_and_functions() {
 }
 
 #[test]
+fn test_xpath_expanded_functions_and_axes() {
+    let doc = parse(BOOKSTORE_XML).expect("Bookstore parse clean");
+    let xpath = XPathEngine::new(&doc);
+
+    // Math & Boolean functions
+    assert_eq!(xpath.evaluate("floor(3.7)", None).unwrap(), XPathValue::Number(3.0));
+    assert_eq!(xpath.evaluate("ceiling(3.2)", None).unwrap(), XPathValue::Number(4.0));
+    assert_eq!(xpath.evaluate("round(3.5)", None).unwrap(), XPathValue::Number(4.0));
+    assert_eq!(xpath.evaluate("true()", None).unwrap(), XPathValue::Boolean(true));
+    assert_eq!(xpath.evaluate("false()", None).unwrap(), XPathValue::Boolean(false));
+
+    // String functions
+    assert_eq!(
+        xpath.evaluate("concat('XML', ' ', 'Lib')", None).unwrap(),
+        XPathValue::String("XML Lib".into())
+    );
+    assert_eq!(
+        xpath.evaluate("substring('Hello World', 1, 5)", None).unwrap(),
+        XPathValue::String("Hello".into())
+    );
+    assert_eq!(
+        xpath.evaluate("substring-before('2005-09-02', '-')", None).unwrap(),
+        XPathValue::String("2005".into())
+    );
+    assert_eq!(
+        xpath.evaluate("substring-after('2005-09-02', '-')", None).unwrap(),
+        XPathValue::String("09-02".into())
+    );
+    assert_eq!(
+        xpath.evaluate("normalize-space('   hello   world   ')", None).unwrap(),
+        XPathValue::String("hello world".into())
+    );
+    assert_eq!(
+        xpath.evaluate("translate('12:30', ':', '')", None).unwrap(),
+        XPathValue::String("1230".into())
+    );
+
+    // Sibling Axes
+    let next_siblings = xpath.evaluate_nodes("/bookstore/book[1]/following-sibling::book", None).unwrap();
+    assert_eq!(next_siblings.len(), 3);
+}
+
+#[test]
 fn test_xpath_syntax_and_errors() {
     let doc = parse(BOOKSTORE_XML).expect("Parse clean");
     let xpath = XPathEngine::new(&doc);

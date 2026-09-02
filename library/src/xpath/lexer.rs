@@ -216,7 +216,7 @@ impl<'a> XPathLexer<'a> {
     fn read_name(&mut self) -> Result<Token> {
         let mut name = String::new();
         while let Some(ch) = self.peek() {
-            if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == ':' || ch == '.' {
+            if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
                 name.push(self.advance().unwrap());
             } else {
                 break;

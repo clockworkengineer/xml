@@ -7,9 +7,15 @@ fn test_dtd_validation() {
   <!ELEMENT note (to,from,heading,body)>
   <!ATTLIST note category CDATA #REQUIRED>
   <!ELEMENT to EMPTY>
+  <!ELEMENT from EMPTY>
+  <!ELEMENT heading EMPTY>
+  <!ELEMENT body EMPTY>
 ]>
 <note category="reminder">
   <to/>
+  <from/>
+  <heading/>
+  <body/>
 </note>"#;
 
     let doc = parse(xml).expect("Should parse XML with DTD");

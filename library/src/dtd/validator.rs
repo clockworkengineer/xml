@@ -130,6 +130,34 @@ impl DtdValidator {
                             )));
                         }
                     }
+                    ContentModel::Children(spec) => {
+                        // Extract element names of direct children
+                        let child_names: Vec<String> = node.children.iter().filter_map(|&c_id| {
+                            doc.get_node(c_id).and_then(|c| match &c.kind {
+                                NodeKind::Element { name, .. } => Some(name.clone()),
+                                _ => None,
+                            })
+                        }).collect();
+
+                        // Basic child specification matching
+                        if spec.contains(',') && !spec.contains('*') && !spec.contains('?') {
+                            // Required sequence like (to,from,heading,body)
+                            let required_names: Vec<String> = spec
+                                .trim_matches(|c| c == '(' || c == ')' || c == '>' || c == ' ')
+                                .split(',')
+                                .map(|s| s.trim().trim_matches('>').trim().to_string())
+                                .filter(|s| !s.is_empty() && !s.starts_with('#'))
+                                .collect();
+
+                            for req in &required_names {
+                                if !child_names.contains(req) {
+                                    return Err(XmlError::DtdError(format!(
+                                        "Element <{name}> does not conform to content specification {spec}: missing required child <{req}>"
+                                    )));
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }

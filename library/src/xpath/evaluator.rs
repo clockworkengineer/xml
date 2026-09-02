@@ -121,6 +121,50 @@ impl<'a> XPathEvaluator<'a> {
                 }
                 anc
             }
+            Axis::FollowingSibling => {
+                if let Some(parent_id) = self.doc.get_node(context_node).and_then(|n| n.parent) {
+                    if let Some(parent) = self.doc.get_node(parent_id) {
+                        if let Some(pos) = parent.children.iter().position(|&id| id == context_node) {
+                            parent.children[pos + 1..].to_vec()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            }
+            Axis::PrecedingSibling => {
+                if let Some(parent_id) = self.doc.get_node(context_node).and_then(|n| n.parent) {
+                    if let Some(parent) = self.doc.get_node(parent_id) {
+                        if let Some(pos) = parent.children.iter().position(|&id| id == context_node) {
+                            parent.children[..pos].to_vec()
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            }
+            Axis::Following => {
+                let mut nodes = Vec::new();
+                for id in context_node + 1..self.doc.len() {
+                    nodes.push(id);
+                }
+                nodes
+            }
+            Axis::Preceding => {
+                let mut nodes = Vec::new();
+                for id in (0..context_node).rev() {
+                    nodes.push(id);
+                }
+                nodes
+            }
             _ => {
                 let mut desc = Vec::new();
                 self.collect_descendants(context_node, &mut desc, false);
@@ -316,6 +360,112 @@ impl<'a> XPathEvaluator<'a> {
                 };
                 Ok(XPathValue::Number(s.chars().count() as f64))
             }
+            "concat" => {
+                let mut res = String::new();
+                for arg in args {
+                    let v = self.evaluate(arg, ctx)?;
+                    res.push_str(&self.to_string(&v));
+                }
+                Ok(XPathValue::String(res))
+            }
+            "substring" => {
+                if args.len() < 2 || args.len() > 3 {
+                    return Err(XmlError::XPathError("substring() expects 2 or 3 arguments".into()));
+                }
+                let s = self.to_string(&self.evaluate(&args[0], ctx)?);
+                let start_idx = self.to_number(&self.evaluate(&args[1], ctx)?) as i64 - 1;
+                let chars: Vec<char> = s.chars().collect();
+                if start_idx < 0 || (start_idx as usize) >= chars.len() {
+                    return Ok(XPathValue::String(String::new()));
+                }
+                let start = start_idx as usize;
+                let len = if args.len() == 3 {
+                    self.to_number(&self.evaluate(&args[2], ctx)?) as usize
+                } else {
+                    chars.len() - start
+                };
+                let end = (start + len).min(chars.len());
+                let sub: String = chars[start..end].iter().collect();
+                Ok(XPathValue::String(sub))
+            }
+            "substring-before" => {
+                if args.len() != 2 {
+                    return Err(XmlError::XPathError("substring-before() expects 2 arguments".into()));
+                }
+                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
+                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
+                if let Some(pos) = s1.find(&s2) {
+                    Ok(XPathValue::String(s1[..pos].to_string()))
+                } else {
+                    Ok(XPathValue::String(String::new()))
+                }
+            }
+            "substring-after" => {
+                if args.len() != 2 {
+                    return Err(XmlError::XPathError("substring-after() expects 2 arguments".into()));
+                }
+                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
+                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
+                if let Some(pos) = s1.find(&s2) {
+                    Ok(XPathValue::String(s1[pos + s2.len()..].to_string()))
+                } else {
+                    Ok(XPathValue::String(String::new()))
+                }
+            }
+            "normalize-space" => {
+                let s = if args.is_empty() {
+                    self.get_node_text(ctx)
+                } else {
+                    self.to_string(&self.evaluate(&args[0], ctx)?)
+                };
+                let words: Vec<&str> = s.split_whitespace().collect();
+                Ok(XPathValue::String(words.join(" ")))
+            }
+            "translate" => {
+                if args.len() != 3 {
+                    return Err(XmlError::XPathError("translate() expects 3 arguments".into()));
+                }
+                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
+                let from = self.to_string(&self.evaluate(&args[1], ctx)?);
+                let to = self.to_string(&self.evaluate(&args[2], ctx)?);
+                let from_chars: Vec<char> = from.chars().collect();
+                let to_chars: Vec<char> = to.chars().collect();
+
+                let mut result = String::new();
+                for ch in s1.chars() {
+                    if let Some(pos) = from_chars.iter().position(|&c| c == ch) {
+                        if pos < to_chars.len() {
+                            result.push(to_chars[pos]);
+                        }
+                    } else {
+                        result.push(ch);
+                    }
+                }
+                Ok(XPathValue::String(result))
+            }
+            "floor" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("floor() expects 1 argument".into()));
+                }
+                let num = self.to_number(&self.evaluate(&args[0], ctx)?);
+                Ok(XPathValue::Number(num.floor()))
+            }
+            "ceiling" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("ceiling() expects 1 argument".into()));
+                }
+                let num = self.to_number(&self.evaluate(&args[0], ctx)?);
+                Ok(XPathValue::Number(num.ceil()))
+            }
+            "round" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("round() expects 1 argument".into()));
+                }
+                let num = self.to_number(&self.evaluate(&args[0], ctx)?);
+                Ok(XPathValue::Number(num.round()))
+            }
+            "true" => Ok(XPathValue::Boolean(true)),
+            "false" => Ok(XPathValue::Boolean(false)),
             _ => Err(XmlError::XPathError(format!("Unknown XPath function: '{name}'"))),
         }
     }

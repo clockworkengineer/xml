@@ -29,6 +29,27 @@ impl<'a> XPathEvaluator<'a> {
                 test,
                 predicates,
             } => {
+                if *axis == Axis::Attribute {
+                    if let NodeTest::Name(attr_name) = test {
+                        if let Some(node) = self.doc.get_node(context_node) {
+                            if let NodeKind::Element { attributes, .. } = &node.kind {
+                                if let Some(attr) = attributes.iter().find(|a| a.name == *attr_name) {
+                                    return Ok(XPathValue::String(attr.value.clone()));
+                                }
+                            }
+                        }
+                    } else if let NodeTest::Wildcard | NodeTest::AttributeWildcard = test {
+                        if let Some(node) = self.doc.get_node(context_node) {
+                            if let NodeKind::Element { attributes, .. } = &node.kind {
+                                if !attributes.is_empty() {
+                                    return Ok(XPathValue::NodeSet(vec![context_node]));
+                                }
+                            }
+                        }
+                    }
+                    return Ok(XPathValue::NodeSet(Vec::new()));
+                }
+
                 let initial_nodes = self.evaluate_axis(axis, test, context_node)?;
                 let filtered = self.apply_predicates(initial_nodes, predicates)?;
                 Ok(XPathValue::NodeSet(filtered))
@@ -270,6 +291,30 @@ impl<'a> XPathEvaluator<'a> {
                     _ => 0.0,
                 };
                 Ok(XPathValue::Number(total))
+            }
+            "contains" => {
+                if args.len() != 2 {
+                    return Err(XmlError::XPathError("contains() expects 2 arguments".into()));
+                }
+                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
+                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
+                Ok(XPathValue::Boolean(s1.contains(&s2)))
+            }
+            "starts-with" => {
+                if args.len() != 2 {
+                    return Err(XmlError::XPathError("starts-with() expects 2 arguments".into()));
+                }
+                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
+                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
+                Ok(XPathValue::Boolean(s1.starts_with(&s2)))
+            }
+            "string-length" => {
+                let s = if args.is_empty() {
+                    self.get_node_text(ctx)
+                } else {
+                    self.to_string(&self.evaluate(&args[0], ctx)?)
+                };
+                Ok(XPathValue::Number(s.chars().count() as f64))
             }
             _ => Err(XmlError::XPathError(format!("Unknown XPath function: '{name}'"))),
         }

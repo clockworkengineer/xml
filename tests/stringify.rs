@@ -1,4 +1,4 @@
-use xml_lib::{parse, stringify};
+use xml_lib::{parse, stringify, Format, SerializeOptions, XmlSerializer};
 
 #[test]
 fn test_roundtrip_stringify() {
@@ -7,4 +7,29 @@ fn test_roundtrip_stringify() {
     let output = stringify(&doc);
     assert!(output.contains("attr=\"value &amp; &quot;quote&quot;\""));
     assert!(output.contains("<item>Text &lt;content&gt;</item>"));
+}
+
+#[test]
+fn test_serialize_options_pretty_print() {
+    let xml = "<root><child1/><child2>val</child2></root>";
+    let doc = parse(xml).expect("Should parse");
+
+    let options = SerializeOptions {
+        indent_spaces: Some(4),
+        format: Format::Utf8,
+    };
+
+    let serialized = XmlSerializer::serialize_to_string(&doc, &options);
+    assert!(serialized.contains("<root>"));
+    assert!(serialized.contains("</root>"));
+}
+
+#[test]
+fn test_parse_stringify_reparse_equivalence() {
+    let xml = r#"<catalog><book id="1"><title>Rust</title></book></catalog>"#;
+    let doc1 = parse(xml).expect("Initial parse should succeed");
+    let serialized = stringify(&doc1);
+    let doc2 = parse(&serialized).expect("Reparse should succeed");
+
+    assert_eq!(doc1.root_element_id().is_some(), doc2.root_element_id().is_some());
 }

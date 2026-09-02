@@ -92,6 +92,35 @@ impl Document {
         None
     }
 
+    pub fn get_children(&self, id: NodeId) -> Vec<NodeId> {
+        self.get_node(id).map(|n| n.children.clone()).unwrap_or_default()
+    }
+
+    pub fn parent_id(&self, id: NodeId) -> Option<NodeId> {
+        self.get_node(id).and_then(|n| n.parent)
+    }
+
+    pub fn get_text_content(&self, id: NodeId) -> String {
+        let mut text = String::new();
+        if let Some(node) = self.get_node(id) {
+            match &node.kind {
+                NodeKind::Text(t) => text.push_str(t),
+                _ => {
+                    for &child_id in &node.children {
+                        if let Some(child) = self.get_node(child_id) {
+                            match &child.kind {
+                                NodeKind::Text(t) => text.push_str(t),
+                                NodeKind::Element { .. } => text.push_str(&self.get_text_content(child_id)),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        text
+    }
+
     pub fn nodes(&self) -> &[NodeData] {
         &self.nodes
     }

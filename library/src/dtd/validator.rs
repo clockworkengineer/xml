@@ -5,6 +5,7 @@
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
+use crate::validator::XmlValidator;
 use std::collections::HashMap;
 
 /// Representation of DTD element content models.
@@ -205,5 +206,11 @@ impl DtdValidator {
             }
         }
         Ok(())
+    }
+}
+
+impl XmlValidator for DtdValidator {
+    fn validate(&self, doc: &Document) -> Result<()> {
+        self.validate(doc)
     }
 }

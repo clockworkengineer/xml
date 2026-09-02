@@ -118,20 +118,10 @@ impl<'a> XmlParser<'a> {
 
     /// Parses a single XML element tag, its attributes, and child content recursively.
     fn parse_element(&mut self, doc: &mut Document, parent_id: NodeId, depth: usize) -> Result<()> {
-        if depth > self.options.max_nesting_depth {
-            return Err(XmlError::SecurityLimitExceeded(format!(
-                "Element nesting depth limit exceeded ({})",
-                self.options.max_nesting_depth
-            )));
-        }
+        self.options.check_nesting_depth(depth)?;
 
         self.element_count += 1;
-        if self.element_count > self.options.max_element_count {
-            return Err(XmlError::SecurityLimitExceeded(format!(
-                "Maximum element count limit exceeded ({})",
-                self.options.max_element_count
-            )));
-        }
+        self.options.check_element_count(self.element_count)?;
 
         if !self.source.consume("<") {
             return Err(XmlError::SyntaxError {
@@ -168,12 +158,7 @@ impl<'a> XmlParser<'a> {
             attributes.push(Attribute::new(attr_name, attr_value));
 
             self.total_attribute_count += 1;
-            if attributes.len() > self.options.max_attribute_count {
-                return Err(XmlError::SecurityLimitExceeded(format!(
-                    "Attribute count per element limit exceeded ({})",
-                    self.options.max_attribute_count
-                )));
-            }
+            self.options.check_attribute_count(attributes.len())?;
 
             self.source.skip_whitespace();
         }

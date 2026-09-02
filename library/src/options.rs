@@ -2,6 +2,8 @@
 //!
 //! Provides configurable parsing options and security thresholds to mitigate DoS and XXE vulnerabilities.
 
+use crate::error::{Result, XmlError};
+
 /// Security policy options and resource limits for the XML parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseOptions {
@@ -34,6 +36,44 @@ impl Default for ParseOptions {
             max_total_attribute_count: 1_000_000,
             max_text_node_size: 1024 * 1024,
             allow_external_entities: false,
+        }
+    }
+}
+
+impl ParseOptions {
+    /// Validates element nesting depth against `max_nesting_depth`.
+    pub fn check_nesting_depth(&self, depth: usize) -> Result<()> {
+        if depth > self.max_nesting_depth {
+            Err(XmlError::SecurityLimitExceeded(format!(
+                "Maximum nesting depth of {} exceeded",
+                self.max_nesting_depth
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates total element count against `max_element_count`.
+    pub fn check_element_count(&self, count: usize) -> Result<()> {
+        if count > self.max_element_count {
+            Err(XmlError::SecurityLimitExceeded(format!(
+                "Maximum element count of {} exceeded",
+                self.max_element_count
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates tag attribute count against `max_attribute_count`.
+    pub fn check_attribute_count(&self, count: usize) -> Result<()> {
+        if count > self.max_attribute_count {
+            Err(XmlError::SecurityLimitExceeded(format!(
+                "Maximum element attribute count of {} exceeded",
+                self.max_attribute_count
+            )))
+        } else {
+            Ok(())
         }
     }
 }

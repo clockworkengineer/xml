@@ -17,6 +17,7 @@ pub mod node;
 pub mod options;
 pub mod parser;
 pub mod stringify;
+pub mod validator;
 pub mod xsd;
 pub mod xpath;
 
@@ -29,6 +30,7 @@ pub use node::{Attribute, NodeData, NodeId, NodeKind};
 pub use options::ParseOptions;
 pub use parser::XmlParser;
 pub use stringify::{SerializeOptions, XmlSerializer};
+pub use validator::XmlValidator;
 pub use xsd::XsdValidator;
 pub use xpath::{XPathEngine, XPathValue};
 

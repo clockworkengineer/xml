@@ -5,6 +5,7 @@
 use crate::document::Document;
 use crate::error::{Result, XmlError};
 use crate::node::{NodeId, NodeKind};
+use crate::validator::XmlValidator;
 use std::collections::HashMap;
 
 /// XSD simple type restriction facets.
@@ -238,5 +239,11 @@ impl XsdValidator {
             }
         }
         text
+    }
+}
+
+impl XmlValidator for XsdValidator {
+    fn validate(&self, doc: &Document) -> Result<()> {
+        self.validate(doc)
     }
 }

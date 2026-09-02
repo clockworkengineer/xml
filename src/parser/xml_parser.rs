@@ -232,8 +232,9 @@ impl<'a> XmlParser<'a> {
                         let parts: Vec<&str> = trimmed.split_whitespace().collect();
                         if parts.len() >= 3 {
                             let ename = parts[1];
-                            let eval = parts[2..].join(" ");
-                            let cleaned_val = eval.trim_matches('"').trim_matches('\'');
+                            let raw_eval = parts[2..].join(" ");
+                            let trimmed_eval = raw_eval.trim().trim_end_matches('>').trim();
+                            let cleaned_val = trimmed_eval.trim_matches('"').trim_matches('\'');
                             self.entity_mapper.register(ename, cleaned_val);
                         }
                     }
@@ -292,6 +293,10 @@ impl<'a> XmlParser<'a> {
             self.source.skip_whitespace();
             let attr_raw_val = self.parse_quoted_string()?;
             let attr_val = self.entity_mapper.expand(&attr_raw_val)?;
+
+            if attributes.iter().any(|a: &Attribute| a.name == attr_name) {
+                return Err(self.source.syntax_error(format!("Attribute '{attr_name}' defined more than once within start tag.")));
+            }
 
             attributes.push(Attribute::new(attr_name, attr_val));
 

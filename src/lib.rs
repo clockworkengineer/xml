@@ -24,8 +24,12 @@ pub use xpath::{XPathEngine, XPathValue};
 
 /// Parse an XML string into a `Document` with default options
 pub fn parse(xml: &str) -> Result<Document> {
+    parse_with_options(xml, ParseOptions::default())
+}
+
+/// Parse an XML string into a `Document` with custom options
+pub fn parse_with_options(xml: &str, options: ParseOptions) -> Result<Document> {
     let source = XmlSource::from_string(xml);
-    let options = ParseOptions::default();
     let mut parser = XmlParser::new(source, options);
     parser.parse()
 }

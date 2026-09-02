@@ -35,6 +35,11 @@ impl XmlSource {
         })
     }
 
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let bytes = std::fs::read(path)?;
+        Self::from_bytes(&bytes)
+    }
+
     pub fn format(&self) -> Format {
         self.format
     }

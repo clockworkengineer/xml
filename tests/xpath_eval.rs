@@ -1,78 +1,95 @@
 use xml_lib::{parse, XPathEngine, XPathValue};
 
-#[test]
-fn test_xpath_evaluation() {
-    let xml = r#"<catalog>
-  <book id="1">
-    <title>Rust Programming</title>
-    <price>49.99</price>
+const BOOKSTORE_XML: &str = r#"<?xml version="1.0"?>
+<bookstore>
+  <book category="cooking">
+    <title lang="en">Everyday Italian</title>
+    <author>Giada De Laurentiis</author>
+    <year>2005</year>
+    <price>30.00</price>
   </book>
-  <book id="2">
-    <title>XML Masterclass</title>
+  <book category="children">
+    <title lang="en">Harry Potter</title>
+    <author>J K. Rowling</author>
+    <year>2005</year>
     <price>29.99</price>
   </book>
-</catalog>"#;
+  <book category="web">
+    <title lang="en">XQuery Kick Start</title>
+    <author>James McGovern</author>
+    <author>Per Bothner</author>
+    <year>2003</year>
+    <price>49.99</price>
+  </book>
+  <book category="web">
+    <title lang="en">Learning XML</title>
+    <author>Erik T. Ray</author>
+    <year>2003</year>
+    <price>39.95</price>
+  </book>
+</bookstore>"#;
 
-    let doc = parse(xml).expect("Should parse catalog");
+#[test]
+fn test_xpath_basic_navigation() {
+    let doc = parse(BOOKSTORE_XML).expect("Bookstore parse clean");
     let xpath = XPathEngine::new(&doc);
 
-    let book_nodes = xpath.evaluate_nodes("/catalog/book", None).expect("XPath should succeed");
-    assert_eq!(book_nodes.len(), 2);
+    // /bookstore
+    let root_nodes = xpath.evaluate_nodes("/bookstore", None).expect("Select root");
+    assert_eq!(root_nodes.len(), 1);
 
-    let count_val = xpath.evaluate("count(/catalog/book)", None).expect("Count should succeed");
-    assert_eq!(count_val, XPathValue::Number(2.0));
+    // //book
+    let all_books = xpath.evaluate_nodes("//book", None).expect("Select all books");
+    assert_eq!(all_books.len(), 4);
 
-    let title_val = xpath.evaluate("/catalog/book[1]/title", None).expect("Title query should succeed");
-    if let XPathValue::NodeSet(ns) = title_val {
-        assert_eq!(ns.len(), 1);
-    } else {
-        panic!("Expected NodeSet");
-    }
+    // /bookstore/book
+    let direct_books = xpath.evaluate_nodes("/bookstore/book", None).expect("Direct books");
+    assert_eq!(direct_books.len(), 4);
+
+    // //book/title
+    let titles = xpath.evaluate_nodes("//book/title", None).expect("Book titles");
+    assert_eq!(titles.len(), 4);
+
+    // /bookstore/*
+    let root_children = xpath.evaluate_nodes("/bookstore/*", None).expect("Root elements");
+    assert_eq!(root_children.len(), 4);
 }
 
 #[test]
-fn test_xpath_attribute_predicates() {
-    let xml = r#"<inventory>
-  <item id="101" category="electronics">Laptop</item>
-  <item id="102" category="books">Rust Book</item>
-</inventory>"#;
-
-    let doc = parse(xml).expect("Should parse inventory");
+fn test_xpath_predicates_and_functions() {
+    let doc = parse(BOOKSTORE_XML).expect("Bookstore parse clean");
     let xpath = XPathEngine::new(&doc);
 
-    let result = xpath.evaluate_nodes("/inventory/item[@category='books']", None)
-        .expect("Attribute predicate should succeed");
-    assert_eq!(result.len(), 1);
+    // count(//book)
+    let count = xpath.evaluate("count(//book)", None).unwrap();
+    assert_eq!(count, XPathValue::Number(4.0));
 
-    let id_query = xpath.evaluate_nodes("//item[@id='101']", None)
-        .expect("Deep search with attribute predicate should succeed");
-    assert_eq!(id_query.len(), 1);
-}
+    // count(//author) -> 5 authors (3rd book has 2)
+    let author_count = xpath.evaluate("count(//author)", None).unwrap();
+    assert_eq!(author_count, XPathValue::Number(5.0));
 
-#[test]
-fn test_xpath_functions() {
-    let xml = r#"<store>
-  <product>Widget A</product>
-  <product>Gadget B</product>
-</store>"#;
+    // //book[@category='cooking']
+    let cooking = xpath.evaluate_nodes("//book[@category='cooking']", None).unwrap();
+    assert_eq!(cooking.len(), 1);
 
-    let doc = parse(xml).expect("Should parse store");
-    let xpath = XPathEngine::new(&doc);
+    // //book[@category='web']
+    let web = xpath.evaluate_nodes("//book[@category='web']", None).unwrap();
+    assert_eq!(web.len(), 2);
 
-    let count = xpath.evaluate("count(//product)", None).expect("count() should work");
-    assert_eq!(count, XPathValue::Number(2.0));
-
-    let contains_res = xpath.evaluate("contains(/store/product, 'Widget')", None)
-        .expect("contains() should work");
+    // contains
+    let contains_res = xpath.evaluate("contains(/bookstore/book[1]/title, 'Italian')", None).unwrap();
     assert_eq!(contains_res, XPathValue::Boolean(true));
 }
 
 #[test]
-fn test_xpath_syntax_error() {
-    let xml = r#"<root><child/></root>"#;
-    let doc = parse(xml).expect("Should parse");
+fn test_xpath_syntax_and_errors() {
+    let doc = parse(BOOKSTORE_XML).expect("Parse clean");
     let xpath = XPathEngine::new(&doc);
 
-    let invalid = xpath.evaluate("/root/[invalid", None);
-    assert!(invalid.is_err(), "Invalid XPath syntax should return an error");
+    assert!(xpath.evaluate("//book[", None).is_err());
+    assert!(xpath.evaluate("unknownFunction()", None).is_err());
+    assert!(xpath.evaluate("", None).is_err());
+
+    let empty = xpath.evaluate_nodes("//nonexistent", None).unwrap();
+    assert!(empty.is_empty());
 }

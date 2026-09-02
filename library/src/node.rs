@@ -80,6 +80,15 @@ impl NodeKind {
             NodeKind::Root => "#document",
         }
     }
+
+    /// Looks up an attribute value by name if this node is an [`NodeKind::Element`].
+    pub fn get_attribute<'a>(&'a self, target: &str) -> Option<&'a str> {
+        if let NodeKind::Element { attributes, .. } = self {
+            attributes.iter().find(|a| &*a.name == target).map(|a| &*a.value)
+        } else {
+            None
+        }
+    }
 }
 
 /// Node container storing node identity, parent link, children links, and node payload.

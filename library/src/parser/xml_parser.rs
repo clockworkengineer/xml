@@ -5,7 +5,7 @@
 use crate::document::Document;
 use crate::entity::EntityMapper;
 use crate::error::{Result, XmlError};
-use crate::io::source::XmlSource;
+use crate::io::{is_xml_name_char, XmlSource};
 use crate::node::{Attribute, NodeId, NodeKind};
 use crate::options::ParseOptions;
 
@@ -446,7 +446,7 @@ impl<'a> XmlParser<'a> {
     fn parse_name(&mut self) -> Result<String> {
         let start = self.source.position();
         while let Some(ch) = self.source.peek() {
-            if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == ':' || ch == '.' {
+            if is_xml_name_char(ch) {
                 self.source.next_char();
             } else {
                 break;

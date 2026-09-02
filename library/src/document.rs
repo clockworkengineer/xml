@@ -121,6 +121,19 @@ impl Document {
         self.get_node(id).map(|n| n.children.clone()).unwrap_or_default()
     }
 
+    /// Returns a list of child Node IDs that are [`NodeKind::Element`] variants.
+    pub fn get_element_children(&self, id: NodeId) -> Vec<NodeId> {
+        self.get_children(id)
+            .into_iter()
+            .filter(|&c_id| self.get_node(c_id).map_or(false, |c| matches!(c.kind, NodeKind::Element { .. })))
+            .collect()
+    }
+
+    /// Looks up an attribute value by name for a given node ID.
+    pub fn get_attribute<'a>(&'a self, id: NodeId, attr_name: &str) -> Option<&'a str> {
+        self.get_node(id).and_then(|node| node.kind.get_attribute(attr_name))
+    }
+
     /// Returns the parent node ID for a given node ID.
     pub fn parent_id(&self, id: NodeId) -> Option<NodeId> {
         self.get_node(id).and_then(|n| n.parent)

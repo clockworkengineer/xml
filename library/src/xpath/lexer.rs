@@ -3,6 +3,7 @@
 //! Tokenizes raw XPath expression strings into discrete tokens ([`Token`]).
 
 use crate::error::{Result, XmlError};
+use crate::io::{is_xml_name_char, is_xml_name_start};
 
 /// XPath 1.0 token variants.
 #[derive(Debug, Clone, PartialEq)]
@@ -216,7 +217,7 @@ impl<'a> XPathLexer<'a> {
             }
             '"' | '\'' => self.read_string(ch),
             _ if ch.is_ascii_digit() => self.read_number(),
-            _ if ch.is_alphabetic() || ch == '_' => self.read_name(),
+            _ if is_xml_name_start(ch) => self.read_name(),
             _ => Err(XmlError::XPathError(format!(
                 "Unexpected character in XPath expression: '{ch}'"
             ))),
@@ -256,7 +257,7 @@ impl<'a> XPathLexer<'a> {
     fn read_name(&mut self) -> Result<Token> {
         let start_pos = self.pos;
         while let Some(ch) = self.peek() {
-            if ch.is_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
+            if is_xml_name_char(ch) && ch != ':' {
                 self.advance();
             } else {
                 break;

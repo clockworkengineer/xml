@@ -44,12 +44,8 @@ impl<'a> XPathEvaluator<'a> {
             } => {
                 if *axis == Axis::Attribute {
                     if let NodeTest::Name(attr_name) = test {
-                        if let Some(node) = self.doc.get_node(context_node) {
-                            if let NodeKind::Element { attributes, .. } = &node.kind {
-                                if let Some(attr) = attributes.iter().find(|a| &*a.name == attr_name) {
-                                    return Ok(XPathValue::String(attr.value.to_string()));
-                                }
-                            }
+                        if let Some(val) = self.doc.get_attribute(context_node, attr_name) {
+                            return Ok(XPathValue::String(val.to_string()));
                         }
                     } else if let NodeTest::Wildcard | NodeTest::AttributeWildcard = test {
                         if let Some(node) = self.doc.get_node(context_node) {

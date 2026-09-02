@@ -5,6 +5,15 @@
 use std::collections::HashMap;
 use crate::error::{Result, XmlError};
 
+/// Standard XML 1.0 predefined entity table mappings `(name, replacement)`.
+pub const PREDEFINED_ENTITIES: &[(&str, &str)] = &[
+    ("lt", "<"),
+    ("gt", ">"),
+    ("amp", "&"),
+    ("quot", "\""),
+    ("apos", "'"),
+];
+
 /// Entity table mapping entity reference names to replacement text with depth recursion tracking.
 #[derive(Debug, Clone)]
 pub struct EntityMapper {
@@ -15,11 +24,9 @@ pub struct EntityMapper {
 impl Default for EntityMapper {
     fn default() -> Self {
         let mut map = HashMap::new();
-        map.insert("lt".into(), "<".into());
-        map.insert("gt".into(), ">".into());
-        map.insert("amp".into(), "&".into());
-        map.insert("quot".into(), "\"".into());
-        map.insert("apos".into(), "'".into());
+        for &(name, value) in PREDEFINED_ENTITIES {
+            map.insert(name.into(), value.into());
+        }
         Self {
             entities: map,
             max_depth: 512,

@@ -59,6 +59,8 @@ pub enum Token {
     LiteralNumber(f64),
     /// End of File / input stream.
     Eof,
+    /// Variable reference ($var).
+    Variable(String),
 }
 
 /// Lexer scanning XPath string slice character by character without intermediate allocations.
@@ -81,6 +83,11 @@ impl<'a> XPathLexer<'a> {
         } else {
             self.input[self.pos..].chars().next()
         }
+    }
+
+    /// Peeks character at `n` positions ahead.
+    pub fn peek_nth(&self, n: usize) -> Option<char> {
+        self.input[self.pos..].chars().nth(n)
     }
 
     fn advance(&mut self) -> Option<char> {
@@ -216,6 +223,14 @@ impl<'a> XPathLexer<'a> {
                     Ok(Token::Name(":".into()))
                 }
             }
+            '$' => {
+                self.advance();
+                let var_name = match self.read_name()? {
+                    Token::Name(n) => n,
+                    _ => return Err(XmlError::XPathError("Expected variable name after '$'".into())),
+                };
+                Ok(Token::Variable(var_name))
+            }
             '"' | '\'' => self.read_string(ch),
             _ if ch.is_ascii_digit() => self.read_number(),
             _ if is_xml_name_start(ch) => self.read_name(),
@@ -258,7 +273,15 @@ impl<'a> XPathLexer<'a> {
     fn read_name(&mut self) -> Result<Token> {
         let start_pos = self.pos;
         while let Some(ch) = self.peek() {
-            if is_xml_name_char(ch) && ch != ':' {
+            if ch == ':' {
+                if self.peek_nth(1) == Some(':') {
+                    // Axis specifier '::', stop reading name
+                    break;
+                } else {
+                    // Single ':' is namespace prefix separator in QName (e.g. soap:Envelope)
+                    self.advance();
+                }
+            } else if is_xml_name_char(ch) {
                 self.advance();
             } else {
                 break;

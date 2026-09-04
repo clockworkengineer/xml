@@ -17,6 +17,24 @@ pub struct XmlPullAttribute<'a> {
 /// Zero-allocation streaming event variant emitted by [`XmlPullParser`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XmlPullEvent<'a> {
+    /// XML Declaration (e.g. `<?xml version="1.0" encoding="UTF-8"?>`).
+    Declaration {
+        /// Version string slice.
+        version: &'a str,
+        /// Optional encoding string slice.
+        encoding: Option<&'a str>,
+        /// Optional standalone flag.
+        standalone: Option<bool>,
+    },
+    /// DOCTYPE definition (e.g. `<!DOCTYPE html SYSTEM "...">`).
+    DocType {
+        /// Document type root name.
+        name: &'a str,
+        /// Optional PUBLIC identifier.
+        public_id: Option<&'a str>,
+        /// Optional SYSTEM identifier.
+        system_id: Option<&'a str>,
+    },
     /// Opening element tag (e.g. `<book category="web">`).
     StartElement {
         /// Element tag name.
@@ -42,6 +60,8 @@ pub enum XmlPullEvent<'a> {
         /// PI data payload.
         data: &'a str,
     },
+    /// End of XML document stream.
+    EndDocument,
 }
 
 impl<'a> XmlPullEvent<'a> {
@@ -91,16 +111,25 @@ impl<'a> Iterator for XmlPullAttributesIter<'a> {
 pub struct XmlPullParser<'a> {
     xml: &'a str,
     pos: usize,
+    pending_end_element: Option<&'a str>,
 }
 
 impl<'a> XmlPullParser<'a> {
     /// Instantiates a new [`XmlPullParser`] over a borrowed string slice.
     pub fn new(xml: &'a str) -> Self {
-        Self { xml, pos: 0 }
+        Self {
+            xml,
+            pos: 0,
+            pending_end_element: None,
+        }
     }
 
-    /// Advances the parser and pulls the next [`XmlPullEvent`]. Returns `None` at EOF.
+    /// Advances the parser and pulls the next [`XmlPullEvent`]. Returns `None` after EOF is reached.
     pub fn next_event(&mut self) -> Result<Option<XmlPullEvent<'a>>> {
+        if let Some(tag_name) = self.pending_end_element.take() {
+            return Ok(Some(XmlPullEvent::EndElement { name: tag_name }));
+        }
+
         if self.pos >= self.xml.len() {
             return Ok(None);
         }
@@ -108,6 +137,33 @@ impl<'a> XmlPullParser<'a> {
         let remaining = &self.xml[self.pos..];
         if remaining.is_empty() {
             return Ok(None);
+        }
+
+        if remaining.starts_with("<?xml") {
+            if let Some(end_idx) = remaining.find("?>") {
+                let content = &remaining[5..end_idx].trim();
+                self.pos += end_idx + 2;
+
+                let mut version = "1.0";
+                let mut encoding = None;
+                let mut standalone = None;
+
+                let mut attrs_iter = XmlPullAttributesIter { raw: content };
+                while let Some(attr) = attrs_iter.next() {
+                    match attr.name {
+                        "version" => version = attr.value,
+                        "encoding" => encoding = Some(attr.value),
+                        "standalone" => standalone = Some(attr.value == "yes"),
+                        _ => {}
+                    }
+                }
+
+                return Ok(Some(XmlPullEvent::Declaration {
+                    version,
+                    encoding,
+                    standalone,
+                }));
+            }
         }
 
         if remaining.starts_with("<?") {
@@ -138,6 +194,19 @@ impl<'a> XmlPullParser<'a> {
             }
         }
 
+        if remaining.starts_with("<!DOCTYPE") {
+            if let Some(end_idx) = remaining.find('>') {
+                let content = remaining[9..end_idx].trim();
+                self.pos += end_idx + 1;
+                let (name, _rest) = content.split_once(char::is_whitespace).unwrap_or((content, ""));
+                return Ok(Some(XmlPullEvent::DocType {
+                    name: name.trim(),
+                    public_id: None,
+                    system_id: None,
+                }));
+            }
+        }
+
         if remaining.starts_with("</") {
             if let Some(end_idx) = remaining.find('>') {
                 let tag_name = remaining[2..end_idx].trim();
@@ -160,8 +229,13 @@ impl<'a> XmlPullParser<'a> {
                     .split_once(char::is_whitespace)
                     .unwrap_or((raw_tag, ""));
 
+                let clean_name = tag_name.trim();
+                if is_self_closing {
+                    self.pending_end_element = Some(clean_name);
+                }
+
                 return Ok(Some(XmlPullEvent::StartElement {
-                    name: tag_name.trim(),
+                    name: clean_name,
                     attr_raw: attr_raw.trim(),
                 }));
             }
@@ -172,5 +246,18 @@ impl<'a> XmlPullParser<'a> {
         let text = &remaining[..next_tag];
         self.pos += next_tag;
         Ok(Some(XmlPullEvent::Text(text)))
+    }
+}
+
+impl<'a> Iterator for XmlPullParser<'a> {
+    type Item = Result<XmlPullEvent<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_event() {
+            Ok(Some(XmlPullEvent::EndDocument)) => None,
+            Ok(Some(ev)) => Some(Ok(ev)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
     }
 }

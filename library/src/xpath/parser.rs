@@ -198,6 +198,11 @@ impl<'a> XPathParser<'a> {
 
     fn parse_primary_or_step(&mut self) -> Result<XPathExpr> {
         match &self.current {
+            Token::Variable(v) => {
+                let name = v.clone();
+                self.advance()?;
+                Ok(XPathExpr::VariableRef(name))
+            }
             Token::LiteralString(s) => {
                 let val = s.clone();
                 self.advance()?;
@@ -207,6 +212,14 @@ impl<'a> XPathParser<'a> {
                 let val = *n;
                 self.advance()?;
                 Ok(XPathExpr::LiteralNumber(val))
+            }
+            Token::LeftParen => {
+                self.advance()?;
+                let expr = self.parse_expression()?;
+                if self.advance()? != Token::RightParen {
+                    return Err(XmlError::XPathError("Expected ')' closing parenthesized expression".into()));
+                }
+                Ok(expr)
             }
             Token::Name(n) if self.lexer.peek() == Some('(') => {
                 let fname = n.clone();

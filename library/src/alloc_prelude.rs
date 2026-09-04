@@ -9,6 +9,7 @@ pub use alloc::{
     boxed::Box,
     format,
     string::{String, ToString},
+    sync::Arc,
     vec,
     vec::Vec,
 };
@@ -19,6 +20,7 @@ pub use std::{
     boxed::Box,
     format,
     string::{String, ToString},
+    sync::Arc,
     vec,
     vec::Vec,
 };

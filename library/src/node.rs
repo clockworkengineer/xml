@@ -93,6 +93,63 @@ impl NodeKind {
             None
         }
     }
+
+    /// Checks if this node is an [`NodeKind::Element`] and has an attribute with the given name.
+    pub fn has_attribute(&self, target: &str) -> bool {
+        self.get_attribute(target).is_some()
+    }
+
+    /// Sets an attribute value on this node if it is an [`NodeKind::Element`].
+    /// If the attribute already exists, its value is overwritten; otherwise, a new attribute is appended.
+    pub fn set_attribute(&mut self, name: impl Into<Box<str>>, value: impl Into<Box<str>>) -> bool {
+        if let NodeKind::Element { attributes, .. } = self {
+            let name_box = name.into();
+            if let Some(attr) = attributes.iter_mut().find(|a| a.name == name_box) {
+                attr.value = value.into();
+            } else {
+                attributes.push(Attribute::new(name_box, value));
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Removes an attribute by name if this node is an [`NodeKind::Element`]. Returns `true` if removed.
+    pub fn remove_attribute(&mut self, target: &str) -> bool {
+        if let NodeKind::Element { attributes, .. } = self {
+            if let Some(pos) = attributes.iter().position(|a| &*a.name == target) {
+                attributes.remove(pos);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns `true` if this node is an [`NodeKind::Element`].
+    pub fn is_element(&self) -> bool {
+        matches!(self, NodeKind::Element { .. })
+    }
+
+    /// Returns `true` if this node is a [`NodeKind::Text`].
+    pub fn is_text(&self) -> bool {
+        matches!(self, NodeKind::Text(_))
+    }
+
+    /// Returns `true` if this node is a [`NodeKind::Comment`].
+    pub fn is_comment(&self) -> bool {
+        matches!(self, NodeKind::Comment(_))
+    }
+
+    /// Returns `true` if this node is a [`NodeKind::CData`].
+    pub fn is_cdata(&self) -> bool {
+        matches!(self, NodeKind::CData(_))
+    }
+
+    /// Returns `true` if this node is a [`NodeKind::ProcessingInstruction`].
+    pub fn is_processing_instruction(&self) -> bool {
+        matches!(self, NodeKind::ProcessingInstruction { .. })
+    }
 }
 
 /// Node container storing node identity, parent link, children links, and node payload.

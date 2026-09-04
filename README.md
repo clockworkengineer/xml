@@ -11,17 +11,19 @@ A high-performance, full-featured, pure Rust XML parsing, validation, stringific
 
 ## Key Features
 
-- **DOM Arena Tree Model**: In-memory [`Document`](docs/API_GUIDE.md#document) represented as a flat arena of nodes indexed by 32-bit compact `NodeId` identifiers (50% smaller node footprint).
+- **DOM Arena Tree Model**: In-memory [`Document`](docs/API_GUIDE.md#document) represented as a flat arena of nodes indexed by compact `NodeId` identifiers with full **W3C DOM Core Level 1–3 mutation & navigation APIs** (`insert_before`, `remove_child`, `replace_child`, `detach`, `clone_node`, `compact`, `next_sibling`, `first_element_child`, etc.).
+- **First-Class XML Namespaces 1.0**: Hierarchical [`NamespaceScope`](docs/API_GUIDE.md#namespaces) stack, `QName` parsing, URI resolution (`lookup_namespace_uri`, `lookup_prefix`), and namespace-aware queries (`get_elements_by_tag_name_ns`).
+- **Canonical XML (W3C C14N 1.0/1.1)**: Deterministic XML canonicalization ([`canonicalize`](docs/API_GUIDE.md#canonicalization)) with namespace inheritance, attribute sorting (`xmlns` first), empty-element expansion, and XMLDSig compliance.
 - **Embedded & Bare-Metal Support**: Full `#![no_std]` + `alloc` mode for resource-constrained microcontrollers (Cortex-M, ESP32, RISC-V).
-- **Zero-Allocation Streaming Pull Parser**: High-speed SAX-style [`XmlPullParser`](docs/API_GUIDE.md#xmlpullparser) emitting borrowed events (`XmlPullEvent<'a>`) with zero heap allocation (`no_alloc`).
+- **Zero-Allocation Streaming Pull Parser**: High-speed SAX-style [`XmlPullParser`](docs/API_GUIDE.md#xmlpullparser) implementing standard Rust `Iterator` with self-closing tag pairing and zero heap allocation (`no_alloc`).
 - **Compact 16-Bit Node Option**: Enable `features = ["small_nodes"]` to use 16-bit `u16` node indices, reducing node struct payload down to 24 bytes (**25% extra RAM reduction**).
-- **SOLID Architecture Design**: Unified [`XmlValidator`](docs/API_GUIDE.md#xmlvalidator) trait interface implemented by `DtdValidator` and `XsdValidator`, allowing custom schema and business rule validation backends.
-- **Encoding Auto-Detection**: Zero-copy UTF-8 string slice indexing with automatic UTF-8 and UTF-16 LE/BE Byte Order Mark (BOM) detection and CRLF/CR line ending normalization.
+- **Advanced XPath 1.0 Query Engine**: Complete query engine supporting all 13 standard XPath axes, filter predicates, variable bindings (`$var`), custom extension functions, and expanded standard functions (`position()`, `last()`, `id()`, `namespace-uri()`, `lang()`, `ends-with()`, `lower-case()`).
+- **DTD & XSD Schema Validation**:
+  - **DTD**: Element content models (`EMPTY`, `ANY`, sequences), `#REQUIRED` attributes, default attribute injection (`apply_defaults`), ID/IDREF referential integrity, and external subset resolution hooks (`set_external_resolver`).
+  - **XSD**: Complex types (`<xs:complexType>`), compositor groups (`<xs:sequence>`, `<xs:choice>`, `<xs:all>`), attribute definitions (`<xs:attribute>`), `minOccurs`/`maxOccurs` bounds, and facet restrictions (`minInclusive`, `maxInclusive`, `minLength`, `maxLength`, `enumeration`, `pattern`).
+- **Serde Serialization & Deserialization**: Optional `features = ["serde"]` for seamless bidirectional mapping between Rust structs and XML (`from_str`, `to_string`).
+- **Streaming I/O & Encodings**: Streaming parser reading from any `std::io::Read` stream (`parse_reader`), with auto-detection for UTF-8/UTF-16 BOM and decoders for ISO-8859-1 (Latin-1), Windows-1252 (CP1252), and 7-bit US-ASCII.
 - **XXE & DoS Protection**: Built-in security limits (`ParseOptions`) restricting entity reference expansion depth (preventing XML Bomb / Billion Laughs attacks), element nesting depth, total element count, and max attributes per tag.
-- **Allocation-Free Serialization**: Fast streaming [`XmlSerializer`](docs/API_GUIDE.md#xmlserializer) with optional pretty-printing, custom indentation, and streaming character escaping.
-- **DTD Validation Engine**: Full DTD subset parsing (`<!ELEMENT>`, `<!ATTLIST>`), element content model checking (`EMPTY`, `ANY`, child sequences), and `#REQUIRED` attribute validation.
-- **XSD Schema Validation**: Parsing of W3C XML Schema definitions (`xs:schema`) supporting primitive types (`xs:string`, `xs:integer`, `xs:boolean`) and simple type restriction facets (`minInclusive`, `maxInclusive`, `minLength`, `maxLength`, `enumeration`).
-- **XPath 1.0 Engine**: Complete query evaluation engine supporting all 13 standard XPath axes, filter predicates `[@attr='val']`, $O(N \log N)$ in-place node-set deduplication, and 20+ XPath 1.0 functions (`count()`, `sum()`, `concat()`, `substring()`, `normalize-space()`, `round()`).
 
 ---
 
@@ -45,13 +47,14 @@ xml_lib_rust = { version = "1.2.1", default-features = false, features = ["alloc
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
-| `std` | **Enabled** | Standard library integration (includes `alloc`) |
+| `std` | **Enabled** | Standard library integration (file I/O, streaming `Read` sources, includes `alloc`) |
 | `alloc` | **Enabled** | Heap allocation primitives (`Vec`, `String`, `Box`, `BTreeMap`) for `#![no_std]` bare-metal targets |
 | `small_nodes` | Disabled | Uses 16-bit `u16` `NodeId` indices (max 65,535 nodes per doc) for ultra-low RAM microcontrollers |
-| `dtd` | **Enabled** | DTD content model and attribute constraint validation |
-| `xsd` | **Enabled** | XSD schema definition and restriction facet validation |
-| `xpath` | **Enabled** | XPath 1.0 lexing, AST parsing, and query evaluation engine |
-| `stringify` | **Enabled** | DOM tree formatting, pretty-printing, and XML serialization |
+| `serde` | Disabled | Bidirectional Serde data binding (`from_str`, `to_string`) |
+| `dtd` | **Enabled** | DTD content model, default injection, and ID/IDREF constraint validation |
+| `xsd` | **Enabled** | XSD schema definition, complex types, compositors, and restriction validation |
+| `xpath` | **Enabled** | XPath 1.0 lexing, AST parsing, variable bindings, and query evaluation |
+| `stringify` | **Enabled** | DOM tree formatting, pretty-printing, and W3C Canonical XML (C14N) |
 
 ---
 
@@ -172,6 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Complete API Reference Guide](docs/API_GUIDE.md)
 - [Executable Code Examples](examples/)
+- [Missing Features & Full W3C/XPath Specification Refactor Plan](docs/missing_features_refactor_plan.md)
 - [Optimization & Performance Refactor Plan](docs/advanced_refactor_plan.md)
 - [DRY Consolidation Refactor Plan](docs/dry_refactor_plan.md)
 - [SOLID Architecture Refactor Plan](docs/solid_refactor_plan.md)

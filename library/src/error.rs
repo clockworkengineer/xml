@@ -38,6 +38,9 @@ pub enum XmlError {
 
     /// I/O error.
     Io(String),
+
+    /// Serialization / Deserialization error.
+    SerializationError(String),
 }
 
 impl fmt::Display for XmlError {
@@ -53,6 +56,7 @@ impl fmt::Display for XmlError {
             Self::XPathError(msg) => write!(f, "XPath error: {msg}"),
             Self::NodeError(msg) => write!(f, "Node error: {msg}"),
             Self::Io(msg) => write!(f, "IO error: {msg}"),
+            Self::SerializationError(msg) => write!(f, "Serialization error: {msg}"),
         }
     }
 }

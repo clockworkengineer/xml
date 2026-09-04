@@ -6,7 +6,7 @@ use crate::alloc_prelude::*;
 use crate::document::Document;
 use crate::entity::EntityMapper;
 use crate::error::{Result, XmlError};
-use crate::io::{is_xml_name_char, XmlSource};
+use crate::io::{is_valid_xml_char, is_xml_name_char, XmlSource};
 use crate::node::{Attribute, NodeId, NodeKind};
 use crate::options::ParseOptions;
 
@@ -49,7 +49,24 @@ impl<'a> XmlParser<'a> {
         let root_container_id = doc.root_id().unwrap_or(0);
         self.parse_element(&mut doc, root_container_id, 0)?;
 
+        self.parse_epilog(&mut doc)?;
+
         self.source.skip_whitespace();
+        if !self.source.is_eof() {
+            if self.source.starts_with("<") {
+                return Err(XmlError::SyntaxError {
+                    message: "Multiple root elements forbidden in well-formed XML".into(),
+                    line: self.source.line(),
+                    col: self.source.col(),
+                });
+            } else {
+                return Err(XmlError::SyntaxError {
+                    message: "Unexpected trailing content after root element".into(),
+                    line: self.source.line(),
+                    col: self.source.col(),
+                });
+            }
+        }
         Ok(doc)
     }
 
@@ -110,6 +127,24 @@ impl<'a> XmlParser<'a> {
                 let dtd_id = self.parse_doctype(doc)?;
                 doc.set_dtd_id(dtd_id);
                 doc.append_child(prolog_id, dtd_id)?;
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Parses epilog items (comments, PIs) following the root element tag.
+    fn parse_epilog(&mut self, doc: &mut Document) -> Result<()> {
+        let root_container_id = doc.root_id().unwrap_or(0);
+        loop {
+            self.source.skip_whitespace();
+            if self.source.starts_with("<!--") {
+                let comment_id = self.parse_comment(doc)?;
+                doc.append_child(root_container_id, comment_id)?;
+            } else if self.source.starts_with("<?") {
+                let pi_id = self.parse_pi(doc)?;
+                doc.append_child(root_container_id, pi_id)?;
             } else {
                 break;
             }
@@ -290,6 +325,13 @@ impl<'a> XmlParser<'a> {
         while let Some(ch) = self.source.peek() {
             if ch == '<' {
                 break;
+            }
+            if !is_valid_xml_char(ch) {
+                return Err(XmlError::SyntaxError {
+                    message: format!("Forbidden XML character '\\u{{{:x}}}'", ch as u32),
+                    line: self.source.line(),
+                    col: self.source.col(),
+                });
             }
             raw_text.push(self.source.next_char().unwrap());
         }

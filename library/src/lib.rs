@@ -18,6 +18,7 @@ pub mod dtd;
 pub mod entity;
 pub mod error;
 pub mod io;
+pub mod namespace;
 pub mod node;
 pub mod options;
 pub mod parser;
@@ -29,17 +30,29 @@ pub mod xpath;
 use crate::alloc_prelude::*;
 
 pub use document::Document;
-pub use dtd::DtdValidator;
+pub use dtd::{DtdAttributeRule, DtdElementRule, DtdValidator, ExternalSubsetResolver};
 pub use entity::{EntityMapper, EntityResolver};
 pub use error::{Result, XmlError};
 pub use io::{Format, XmlDestination, XmlSource};
+pub use namespace::{Namespace, NamespaceScope, QName};
 pub use node::{Attribute, NodeData, NodeId, NodeKind};
 pub use options::ParseOptions;
 pub use parser::{XmlParser, XmlPullAttribute, XmlPullEvent, XmlPullParser};
-pub use stringify::{SerializeOptions, XmlSerializer};
+pub use stringify::{canonicalize, CanonicalOptions, CanonicalSerializer, SerializeOptions, XmlSerializer};
 pub use validator::XmlValidator;
-pub use xsd::XsdValidator;
+pub use xsd::{
+    Compositor, XsdAttributeRule, XsdComplexType, XsdElementRule, XsdRestriction, XsdValidator,
+};
 pub use xpath::{XPathEngine, XPathValue};
+
+#[cfg(feature = "serde")]
+pub mod serde_impl;
+
+#[cfg(feature = "serde")]
+pub use serde_impl::{
+    from_str as from_xml_str, to_string as to_xml_string,
+    to_string_with_root as to_xml_string_with_root,
+};
 
 /// Parse an XML string slice into a DOM `Document` using default parsing options.
 ///
@@ -66,6 +79,27 @@ pub fn parse_with_options(xml: &str, options: ParseOptions) -> Result<Document> 
 /// * `bytes` - Raw byte slice (UTF-8, UTF-16 LE, or UTF-16 BE with optional BOM).
 pub fn parse_bytes(bytes: &[u8]) -> Result<Document> {
     let source = XmlSource::from_bytes(bytes)?;
+    let options = ParseOptions::default();
+    let mut parser = XmlParser::new(source, options);
+    parser.parse()
+}
+
+/// Parse raw byte slice into a DOM `Document` with an explicitly specified character encoding.
+///
+/// # Arguments
+/// * `bytes` - Raw byte slice.
+/// * `encoding` - Encoding name (`"ISO-8859-1"`, `"WINDOWS-1252"`, `"US-ASCII"`, etc.).
+pub fn parse_bytes_with_encoding(bytes: &[u8], encoding: &str) -> Result<Document> {
+    let source = XmlSource::from_bytes_with_encoding(bytes, encoding)?;
+    let options = ParseOptions::default();
+    let mut parser = XmlParser::new(source, options);
+    parser.parse()
+}
+
+/// Parse an XML stream from an arbitrary `std::io::Read` into a DOM `Document`.
+#[cfg(feature = "std")]
+pub fn parse_reader<R: std::io::Read>(reader: R) -> Result<Document> {
+    let source = XmlSource::from_reader(reader)?;
     let options = ParseOptions::default();
     let mut parser = XmlParser::new(source, options);
     parser.parse()

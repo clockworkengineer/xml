@@ -4,4 +4,6 @@
 
 pub mod validator;
 
-pub use validator::{XsdElementRule, XsdRestriction, XsdValidator};
+pub use validator::{
+    Compositor, XsdAttributeRule, XsdComplexType, XsdElementRule, XsdRestriction, XsdValidator,
+};

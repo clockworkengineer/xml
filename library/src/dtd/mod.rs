@@ -4,4 +4,6 @@
 
 pub mod validator;
 
-pub use validator::{ContentModel, DtdAttributeRule, DtdElementRule, DtdValidator};
+pub use validator::{
+    ContentModel, DtdAttributeRule, DtdElementRule, DtdValidator, ExternalSubsetResolver,
+};

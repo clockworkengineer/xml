@@ -16,6 +16,11 @@ This document provides a comprehensive usage reference and code snippet guide fo
 8. [SOLID Trait-Based Schema Validation (`XmlValidator`)](#8-solid-trait-based-schema-validation-xmlvalidator)
 9. [Zero-Allocation Streaming Pull Parser (`XmlPullParser`)](#9-zero-allocation-streaming-pull-parser-xmlpullparser)
 10. [XPath 1.0 Query Evaluation](#10-xpath-10-query-evaluation)
+11. [W3C DOM Core Mutations & Arena Compaction](#11-w3c-dom-core-mutations--arena-compaction)
+12. [XML Namespaces 1.0 Subsystem](#12-xml-namespaces-10-subsystem)
+13. [Canonical XML (W3C C14N 1.0/1.1)](#13-canonical-xml-w3c-c14n-1011)
+14. [Advanced Schema Validation (DTD & XSD)](#14-advanced-schema-validation-dtd--xsd)
+15. [Serde Data Binding & Streaming I/O](#15-serde-data-binding--streaming-io)
 
 ---
 
@@ -335,3 +340,203 @@ if let XPathValue::Number(total) = engine.evaluate("sum(//val)", None)? {
     assert_eq!(total, 60.0);
 }
 ```
+
+### Variable Bindings & Custom Functions
+
+```rust
+use xml_lib_rust::{parse, XPathEngine, XPathValue};
+
+let doc = parse("<catalog><book id='b1' price='25'/><book id='b2' price='45'/></catalog>")?;
+let mut engine = XPathEngine::new(&doc);
+
+// Bind variables ($threshold)
+engine.set_variable("threshold", XPathValue::Number(30.0));
+let expensive = engine.evaluate_nodes("//book[@price > $threshold]", None)?;
+assert_eq!(expensive.len(), 1);
+
+// Register custom extension functions
+engine.register_function("double", |args| {
+    let n = args.first().and_then(|v| v.as_number()).unwrap_or(0.0);
+    Ok(XPathValue::Number(n * 2.0))
+});
+```
+
+---
+
+## 11. W3C DOM Core Mutations & Arena Compaction
+
+Full W3C DOM Core Level 1–3 mutation APIs allowing live element manipulation and memory reclamation.
+
+```rust
+use xml_lib_rust::parse;
+
+let mut doc = parse("<list><item id='1'/><item id='2'/><item id='3'/></list>")?;
+let root_id = doc.root_element_id().unwrap();
+
+// Navigation
+let first = doc.first_element_child(root_id).unwrap();
+let next = doc.next_sibling(first).unwrap();
+
+// Insert Before
+let new_node = doc.create_element("item");
+doc.set_attribute(new_node, "id", "1.5")?;
+doc.insert_before(root_id, new_node, next)?;
+
+// Remove and Detach
+doc.remove_child(root_id, next)?;
+doc.detach(first)?;
+
+// Clone Node (deep clone)
+let cloned = doc.clone_node(root_id, true)?;
+
+// Reclaim dead node memory via Arena Compaction
+let remapped_root = doc.compact();
+```
+
+---
+
+## 12. XML Namespaces 1.0 Subsystem
+
+First-class W3C Namespaces 1.0 support with prefix mapping, QName decomposition, and URI inspection.
+
+```rust
+use xml_lib_rust::parse;
+
+let xml = r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body><data>content</data></soap:Body>
+</soap:Envelope>"#;
+
+let doc = parse(xml)?;
+let root_id = doc.root_element_id().unwrap();
+
+assert_eq!(doc.get_prefix(root_id), Some("soap"));
+assert_eq!(doc.get_local_name(root_id), "Envelope");
+assert_eq!(doc.get_namespace_uri(root_id), Some("http://schemas.xmlsoap.org/soap/envelope/"));
+
+// Find elements by Namespace URI and local name
+let bodies = doc.get_elements_by_tag_name_ns("http://schemas.xmlsoap.org/soap/envelope/", "Body");
+assert_eq!(bodies.len(), 1);
+```
+
+---
+
+## 13. Canonical XML (W3C C14N 1.0/1.1)
+
+Deterministic canonical XML serialization for XML Signatures (XMLDSig) and cryptographically reproducible document hashing.
+
+```rust
+use xml_lib_rust::{canonicalize, parse, CanonicalOptions, CanonicalSerializer};
+
+let xml = r#"<doc b="2" a="1"   xmlns:z="http://z"  xmlns:a="http://a"><empty/></doc>"#;
+let doc = parse(xml)?;
+
+// Default canonicalization (omits declaration, sorts xmlns then attributes, expands <empty></empty>)
+let c14n = canonicalize(&doc);
+assert!(c14n.starts_with("<doc xmlns:a=\"http://a\" xmlns:z=\"http://z\" a=\"1\" b=\"2\"><empty></empty></doc>"));
+
+// Canonicalization preserving comments
+let with_comments = CanonicalSerializer::canonicalize(&doc, &CanonicalOptions { with_comments: true });
+```
+
+---
+
+## 14. Advanced Schema Validation (DTD & XSD)
+
+### DTD Default Values, ID/IDREF & External Resolvers
+
+```rust
+use xml_lib_rust::{parse, DtdValidator};
+
+let dtd = r#"
+    <!ELEMENT root (user*, order*)>
+    <!ELEMENT user EMPTY>
+    <!ATTLIST user id ID #REQUIRED>
+    <!ATTLIST user role CDATA "guest">
+    <!ELEMENT order EMPTY>
+    <!ATTLIST order buyer IDREF #REQUIRED>
+"#;
+
+let mut validator = DtdValidator::new();
+validator.parse_subset(dtd)?;
+
+// Support external SYSTEM DTD resolver hooks
+validator.set_external_resolver(|system_id, _| {
+    if system_id == "my_system.dtd" {
+        Some("<!ELEMENT root (item)*>".into())
+    } else {
+        None
+    }
+});
+
+let mut doc = parse("<root><user id='u1'/><order buyer='u1'/></root>")?;
+
+// Inject declared attribute defaults
+let injected = validator.apply_defaults(&mut doc)?;
+
+// Enforces ID uniqueness and IDREF referential integrity
+validator.validate(&doc)?;
+```
+
+### XSD Compositors (`sequence`, `choice`, `all`) & Attributes
+
+```rust
+use xml_lib_rust::{parse, XsdValidator};
+
+let schema_xml = r#"<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="person">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="name" type="xs:string" minOccurs="1"/>
+        <xs:element name="email" type="xs:string" minOccurs="0" maxOccurs="2"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:integer" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>"#;
+
+let mut validator = XsdValidator::new();
+validator.parse_schema(schema_xml)?;
+
+let doc = parse("<person id='101'><name>Alice</name></person>")?;
+assert!(validator.validate(&doc).is_ok());
+```
+
+---
+
+## 15. Serde Data Binding & Streaming I/O
+
+Requires feature `features = ["serde"]`.
+
+```rust
+use serde::{Deserialize, Serialize};
+use xml_lib_rust::serde_impl::{from_str, to_string_with_root};
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+struct Person {
+    name: String,
+    age: u32,
+}
+
+let xml = "<person><name>Bob</name><age>28</age></person>";
+let person: Person = from_str(xml)?;
+assert_eq!(person.age, 28);
+
+let generated = to_string_with_root("person", &person)?;
+assert!(generated.contains("<name>Bob</name>"));
+```
+
+### Streaming Read & Custom Encodings
+
+```rust
+use xml_lib_rust::{parse_reader, parse_bytes_with_encoding};
+
+// Read from any std::io::Read stream (File, TcpStream, Cursor)
+let cursor = std::io::Cursor::new(b"<data>streaming</data>");
+let doc = parse_reader(cursor)?;
+
+// Decode single-byte encodings (ISO-8859-1, Windows-1252, US-ASCII)
+let iso_bytes: &[u8] = b"<item name=\"Caf\xE9\"/>";
+let iso_doc = parse_bytes_with_encoding(iso_bytes, "ISO-8859-1")?;
+```
+

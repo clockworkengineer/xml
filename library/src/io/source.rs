@@ -3,7 +3,9 @@
 //! Provides the zero-copy [`XmlSource`] abstraction reading directly from UTF-8 string slices with line/col tracking.
 
 use crate::alloc_prelude::*;
-use crate::error::{Result, XmlError};
+use crate::error::Result;
+#[cfg(feature = "std")]
+use crate::error::XmlError;
 use crate::io::encoding::detect_encoding_and_strip_bom;
 pub use crate::io::encoding::Format;
 
@@ -51,10 +53,35 @@ impl XmlSource {
         })
     }
 
+    /// Creates an `XmlSource` from raw bytes with an explicitly specified character encoding name.
+    pub fn from_bytes_with_encoding(bytes: &[u8], encoding: &str) -> Result<Self> {
+        let (raw_content, format) = crate::io::encoding::decode_with_encoding(bytes, encoding)?;
+        let normalized = if raw_content.contains('\r') {
+            raw_content.replace("\r\n", "\n").replace('\r', "\n")
+        } else {
+            raw_content
+        };
+        Ok(Self {
+            content: normalized,
+            pos: 0,
+            line: 1,
+            col: 1,
+            format,
+        })
+    }
+
     /// Reads an `XmlSource` from a file path on disk.
     #[cfg(feature = "std")]
     pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let bytes = std::fs::read(path.as_ref()).map_err(|e| XmlError::Io(e.to_string()))?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Reads all bytes from an arbitrary `std::io::Read` stream into an `XmlSource`.
+    #[cfg(feature = "std")]
+    pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).map_err(|e| XmlError::Io(e.to_string()))?;
         Self::from_bytes(&bytes)
     }
 

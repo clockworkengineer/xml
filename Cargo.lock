@@ -597,9 +597,10 @@ dependencies = [
 
 [[package]]
 name = "xml_lib_rust"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "criterion",
+ "serde",
  "thiserror",
 ]
 

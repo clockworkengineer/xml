@@ -45,4 +45,17 @@ impl<'a> XPathEngine<'a> {
             _ => Ok(Vec::new()),
         }
     }
+
+    /// Sets or updates a variable binding reference ($var) in the XPath context.
+    pub fn set_variable(&mut self, name: impl Into<String>, value: XPathValue) {
+        self.evaluator.set_variable(name, value);
+    }
+
+    /// Registers a custom user-defined XPath function.
+    pub fn register_function<F>(&mut self, name: impl Into<String>, f: F)
+    where
+        F: Fn(&[XPathValue]) -> Result<XPathValue> + 'static,
+    {
+        self.evaluator.register_function(name, f);
+    }
 }

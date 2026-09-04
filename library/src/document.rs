@@ -63,6 +63,392 @@ impl Document {
         Ok(())
     }
 
+    /// Detaches a child node from its parent within the arena and resets the child's parent link to `None`.
+    pub fn remove_child(&mut self, parent_id: NodeId, child_id: NodeId) -> Result<NodeId> {
+        let p_idx = parent_id as usize;
+        let c_idx = child_id as usize;
+        if p_idx >= self.nodes.len() || c_idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        let pos = self.nodes[p_idx]
+            .children
+            .iter()
+            .position(|&id| id == child_id)
+            .ok_or_else(|| XmlError::NodeError(format!("Child node {} not found on parent {}", child_id, parent_id)))?;
+        self.nodes[p_idx].children.remove(pos);
+        self.nodes[c_idx].parent = None;
+        Ok(child_id)
+    }
+
+    /// Inserts a new child node immediately before a reference child node under the specified parent.
+    pub fn insert_before(&mut self, parent_id: NodeId, new_child_id: NodeId, ref_child_id: NodeId) -> Result<()> {
+        let p_idx = parent_id as usize;
+        let n_idx = new_child_id as usize;
+        let r_idx = ref_child_id as usize;
+        if p_idx >= self.nodes.len() || n_idx >= self.nodes.len() || r_idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        if let Some(old_parent) = self.nodes[n_idx].parent {
+            self.remove_child(old_parent, new_child_id)?;
+        }
+        let pos = self.nodes[p_idx]
+            .children
+            .iter()
+            .position(|&id| id == ref_child_id)
+            .ok_or_else(|| XmlError::NodeError(format!("Reference child {} not found on parent {}", ref_child_id, parent_id)))?;
+        self.nodes[p_idx].children.insert(pos, new_child_id);
+        self.nodes[n_idx].parent = Some(parent_id);
+        Ok(())
+    }
+
+    /// Replaces an existing child node with a new child node under the specified parent.
+    pub fn replace_child(&mut self, parent_id: NodeId, new_child_id: NodeId, old_child_id: NodeId) -> Result<NodeId> {
+        let p_idx = parent_id as usize;
+        let n_idx = new_child_id as usize;
+        let o_idx = old_child_id as usize;
+        if p_idx >= self.nodes.len() || n_idx >= self.nodes.len() || o_idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        if let Some(old_parent) = self.nodes[n_idx].parent {
+            self.remove_child(old_parent, new_child_id)?;
+        }
+        let pos = self.nodes[p_idx]
+            .children
+            .iter()
+            .position(|&id| id == old_child_id)
+            .ok_or_else(|| XmlError::NodeError(format!("Old child {} not found on parent {}", old_child_id, parent_id)))?;
+        self.nodes[p_idx].children[pos] = new_child_id;
+        self.nodes[o_idx].parent = None;
+        self.nodes[n_idx].parent = Some(parent_id);
+        Ok(old_child_id)
+    }
+
+    /// Detaches a node from its parent if one exists.
+    pub fn detach(&mut self, node_id: NodeId) -> Result<()> {
+        let n_idx = node_id as usize;
+        if n_idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        if let Some(parent_id) = self.nodes[n_idx].parent {
+            self.remove_child(parent_id, node_id)?;
+        }
+        Ok(())
+    }
+
+    /// Sets or updates an attribute on an [`NodeKind::Element`] node.
+    pub fn set_attribute(&mut self, elem_id: NodeId, name: impl Into<Box<str>>, value: impl Into<Box<str>>) -> Result<()> {
+        let idx = elem_id as usize;
+        if idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        if !self.nodes[idx].kind.set_attribute(name, value) {
+            return Err(XmlError::NodeError(format!("Node {} is not an Element", elem_id)));
+        }
+        Ok(())
+    }
+
+    /// Removes an attribute by name from an [`NodeKind::Element`] node. Returns `true` if removed.
+    pub fn remove_attribute(&mut self, elem_id: NodeId, name: &str) -> bool {
+        let idx = elem_id as usize;
+        if idx >= self.nodes.len() {
+            return false;
+        }
+        self.nodes[idx].kind.remove_attribute(name)
+    }
+
+    /// Checks if an [`NodeKind::Element`] node has an attribute with the given name.
+    pub fn has_attribute(&self, elem_id: NodeId, name: &str) -> bool {
+        self.get_attribute(elem_id, name).is_some()
+    }
+
+    /// Sets the text content of a node.
+    /// For an Element, this removes all existing child nodes and replaces them with a single Text node.
+    /// For Text/CData/Comment, this updates the content in place.
+    pub fn set_text_content(&mut self, node_id: NodeId, text: impl Into<Box<str>>) -> Result<()> {
+        let idx = node_id as usize;
+        if idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        let text_box = text.into();
+        match &mut self.nodes[idx].kind {
+            NodeKind::Text(t) | NodeKind::CData(t) | NodeKind::Comment(t) => {
+                *t = text_box;
+                Ok(())
+            }
+            NodeKind::Element { .. } => {
+                let old_children = self.nodes[idx].children.clone();
+                for child_id in old_children {
+                    self.nodes[child_id as usize].parent = None;
+                }
+                self.nodes[idx].children.clear();
+                let text_node_id = self.add_node(NodeKind::Text(text_box));
+                self.append_child(node_id, text_node_id)?;
+                Ok(())
+            }
+            _ => Err(XmlError::NodeError("Cannot set text content on this node type".into())),
+        }
+    }
+
+    /// Returns the first child node ID of a given node, if any.
+    pub fn first_child(&self, id: NodeId) -> Option<NodeId> {
+        self.get_node(id)?.children.first().copied()
+    }
+
+    /// Returns the last child node ID of a given node, if any.
+    pub fn last_child(&self, id: NodeId) -> Option<NodeId> {
+        self.get_node(id)?.children.last().copied()
+    }
+
+    /// Returns the next sibling node ID of a given node, if any.
+    pub fn next_sibling(&self, id: NodeId) -> Option<NodeId> {
+        let parent_id = self.parent_id(id)?;
+        let parent = self.get_node(parent_id)?;
+        let pos = parent.children.iter().position(|&child| child == id)?;
+        parent.children.get(pos + 1).copied()
+    }
+
+    /// Returns the previous sibling node ID of a given node, if any.
+    pub fn previous_sibling(&self, id: NodeId) -> Option<NodeId> {
+        let parent_id = self.parent_id(id)?;
+        let parent = self.get_node(parent_id)?;
+        let pos = parent.children.iter().position(|&child| child == id)?;
+        if pos > 0 {
+            parent.children.get(pos - 1).copied()
+        } else {
+            None
+        }
+    }
+
+    /// Returns the first child node ID that is an [`NodeKind::Element`].
+    pub fn first_element_child(&self, id: NodeId) -> Option<NodeId> {
+        self.get_node(id)?
+            .children
+            .iter()
+            .copied()
+            .find(|&c_id| self.get_node(c_id).map_or(false, |c| c.kind.is_element()))
+    }
+
+    /// Returns the last child node ID that is an [`NodeKind::Element`].
+    pub fn last_element_child(&self, id: NodeId) -> Option<NodeId> {
+        self.get_node(id)?
+            .children
+            .iter()
+            .copied()
+            .rfind(|&c_id| self.get_node(c_id).map_or(false, |c| c.kind.is_element()))
+    }
+
+    /// Creates a clone of a node, optionally cloning its child subtree recursively (`deep = true`).
+    /// Cloned nodes are inserted into the arena as unlinked root nodes (`parent = None`).
+    pub fn clone_node(&mut self, node_id: NodeId, deep: bool) -> Result<NodeId> {
+        let idx = node_id as usize;
+        if idx >= self.nodes.len() {
+            return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        let kind = self.nodes[idx].kind.clone();
+        let new_id = self.add_node(kind);
+
+        if deep {
+            let children = self.nodes[idx].children.clone();
+            for child_id in children {
+                let cloned_child = self.clone_node(child_id, true)?;
+                self.append_child(new_id, cloned_child)?;
+            }
+        }
+
+        Ok(new_id)
+    }
+
+    /// Returns all descendant [`NodeKind::Element`] node IDs with a given tag name (or all elements if `name == "*"`).
+    pub fn get_elements_by_tag_name(&self, name: &str) -> Vec<NodeId> {
+        let mut results = Vec::new();
+        let match_all = name == "*";
+
+        for node in &self.nodes {
+            if let NodeKind::Element { name: elem_name, .. } = &node.kind {
+                if match_all || &**elem_name == name {
+                    results.push(node.id);
+                }
+            }
+        }
+        results
+    }
+
+    /// Finds the first element with an attribute `id` matching the specified string.
+    pub fn get_element_by_id(&self, id: &str) -> Option<NodeId> {
+        self.nodes.iter().find_map(|node| {
+            if node.kind.is_element() && node.kind.get_attribute("id") == Some(id) {
+                Some(node.id)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the namespace prefix for a node if present (e.g. `"xs"` in `<xs:element>`).
+    pub fn get_prefix(&self, id: NodeId) -> Option<&str> {
+        let node = self.get_node(id)?;
+        crate::namespace::QName::split_prefix(node.kind.name()).0
+    }
+
+    /// Returns the local name for a node (e.g. `"element"` in `<xs:element>`).
+    pub fn get_local_name(&self, id: NodeId) -> &str {
+        if let Some(node) = self.get_node(id) {
+            crate::namespace::QName::split_prefix(node.kind.name()).1
+        } else {
+            ""
+        }
+    }
+
+    /// Resolves the active namespace URI for a given element node by walking up ancestor declaration scopes.
+    pub fn get_namespace_uri(&self, id: NodeId) -> Option<String> {
+        let prefix = self.get_prefix(id);
+        if let Some(p) = prefix {
+            if p == "xml" {
+                return Some("http://www.w3.org/XML/1998/namespace".to_string());
+            }
+            if p == "xmlns" {
+                return Some("http://www.w3.org/2000/xmlns/".to_string());
+            }
+            self.lookup_namespace_uri(id, p)
+        } else {
+            self.lookup_namespace_uri(id, "")
+        }
+    }
+
+    /// Finds the namespace prefix mapped to the given URI in the scope of the specified node.
+    pub fn lookup_prefix(&self, id: NodeId, uri: &str) -> Option<String> {
+        let mut curr = Some(id);
+        while let Some(nid) = curr {
+            if let Some(node) = self.get_node(nid) {
+                if let NodeKind::Element { attributes, .. } = &node.kind {
+                    for attr in attributes {
+                        if &*attr.value == uri {
+                            if let Some(prefix) = attr.name.strip_prefix("xmlns:") {
+                                return Some(prefix.to_string());
+                            } else if &*attr.name == "xmlns" {
+                                return Some(String::new());
+                            }
+                        }
+                    }
+                }
+            }
+            curr = self.parent_id(nid);
+        }
+        None
+    }
+
+    /// Finds the namespace URI mapped to the given prefix in the scope of the specified node.
+    pub fn lookup_namespace_uri(&self, id: NodeId, prefix: &str) -> Option<String> {
+        let mut curr = Some(id);
+        let target_attr = if prefix.is_empty() {
+            "xmlns".to_string()
+        } else {
+            format!("xmlns:{}", prefix)
+        };
+
+        while let Some(nid) = curr {
+            if let Some(node) = self.get_node(nid) {
+                if let NodeKind::Element { attributes, .. } = &node.kind {
+                    for attr in attributes {
+                        if &*attr.name == target_attr {
+                            if attr.value.is_empty() {
+                                return None;
+                            }
+                            return Some(attr.value.to_string());
+                        }
+                    }
+                }
+            }
+            curr = self.parent_id(nid);
+        }
+        None
+    }
+
+    /// Returns all descendant [`NodeKind::Element`] node IDs matching a namespace URI and local name.
+    /// Supports `"*"` as wildcard for either `uri` or `local_name`.
+    pub fn get_elements_by_tag_name_ns(&self, uri: &str, local_name: &str) -> Vec<NodeId> {
+        let mut results = Vec::new();
+        let match_any_uri = uri == "*";
+        let match_any_local = local_name == "*";
+
+        for node in &self.nodes {
+            if node.kind.is_element() {
+                let elem_local = self.get_local_name(node.id);
+                let local_matches = match_any_local || elem_local == local_name;
+                if local_matches {
+                    let elem_uri = self.get_namespace_uri(node.id);
+                    let uri_matches = match_any_uri
+                        || match (uri, elem_uri.as_deref()) {
+                            ("", None) => true,
+                            (u, Some(eu)) => u == eu,
+                            _ => false,
+                        };
+                    if uri_matches {
+                        results.push(node.id);
+                    }
+                }
+            }
+        }
+        results
+    }
+
+    /// Garbage collects unreferenced nodes and compacts the arena vector.
+    /// Traverses all reachable nodes starting from virtual containers (Root and Prolog),
+    /// remaps all `NodeId` identifiers, and rebuilds the internal arena.
+    pub fn compact(&mut self) -> Result<()> {
+        let mut reachable = vec![false; self.nodes.len()];
+        let mut stack = Vec::new();
+
+        if let Some(r) = self.root_id {
+            stack.push(r);
+        }
+        if let Some(p) = self.prolog_id {
+            stack.push(p);
+        }
+
+        while let Some(nid) = stack.pop() {
+            let idx = nid as usize;
+            if idx < self.nodes.len() && !reachable[idx] {
+                reachable[idx] = true;
+                if let Some(node) = self.nodes.get(idx) {
+                    for &child in &node.children {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
+
+        let mut id_map = vec![None; self.nodes.len()];
+        let mut new_nodes = Vec::new();
+
+        for (old_idx, &is_reachable) in reachable.iter().enumerate() {
+            if is_reachable {
+                let new_id = new_nodes.len() as NodeId;
+                id_map[old_idx] = Some(new_id);
+                new_nodes.push(self.nodes[old_idx].clone());
+            }
+        }
+
+        for node in &mut new_nodes {
+            let old_id = node.id as usize;
+            node.id = id_map[old_id].unwrap();
+            node.parent = node.parent.and_then(|p| id_map.get(p as usize).copied().flatten());
+            node.children = node
+                .children
+                .iter()
+                .filter_map(|&c| id_map.get(c as usize).copied().flatten())
+                .collect();
+        }
+
+        self.root_id = self.root_id.and_then(|r| id_map.get(r as usize).copied().flatten());
+        self.prolog_id = self.prolog_id.and_then(|p| id_map.get(p as usize).copied().flatten());
+        self.declaration_id = self.declaration_id.and_then(|d| id_map.get(d as usize).copied().flatten());
+        self.dtd_id = self.dtd_id.and_then(|d| id_map.get(d as usize).copied().flatten());
+
+        self.nodes = new_nodes;
+        Ok(())
+    }
+
     /// Immutable lookup for a node by ID.
     pub fn get_node(&self, id: NodeId) -> Option<&NodeData> {
         self.nodes.get(id as usize)

@@ -21,20 +21,60 @@ pub enum XPathValue {
     String(String),
 }
 
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap as HashMap;
+
+/// Callback signature for custom user-defined XPath functions.
+pub type XPathCustomFn = alloc::boxed::Box<dyn Fn(&[XPathValue]) -> Result<XPathValue>>;
+
 /// Evaluator computing XPath ASTs against a DOM [`Document`].
 pub struct XPathEvaluator<'a> {
     /// Reference to target [`Document`].
     pub doc: &'a Document,
+    /// Variable bindings table ($var).
+    pub variables: HashMap<String, XPathValue>,
+    /// Custom function callbacks.
+    pub custom_functions: HashMap<String, XPathCustomFn>,
 }
 
 impl<'a> XPathEvaluator<'a> {
     /// Instantiates a new [`XPathEvaluator`] for a target [`Document`].
     pub fn new(doc: &'a Document) -> Self {
-        Self { doc }
+        Self {
+            doc,
+            variables: HashMap::new(),
+            custom_functions: HashMap::new(),
+        }
+    }
+
+    /// Sets or updates a variable binding reference ($var).
+    pub fn set_variable(&mut self, name: impl Into<String>, value: XPathValue) {
+        self.variables.insert(name.into(), value);
+    }
+
+    /// Registers a custom user-defined XPath function.
+    pub fn register_function<F>(&mut self, name: impl Into<String>, f: F)
+    where
+        F: Fn(&[XPathValue]) -> Result<XPathValue> + 'static,
+    {
+        self.custom_functions.insert(name.into(), Box::new(f));
     }
 
     /// Evaluates an [`XPathExpr`] AST relative to a given `context_node` ID.
     pub fn evaluate(&self, expr: &XPathExpr, context_node: NodeId) -> Result<XPathValue> {
+        self.evaluate_internal(expr, context_node, 1, 1)
+    }
+
+    /// Evaluates an [`XPathExpr`] AST with dynamic context position and context size.
+    pub fn evaluate_internal(
+        &self,
+        expr: &XPathExpr,
+        context_node: NodeId,
+        pos: usize,
+        size: usize,
+    ) -> Result<XPathValue> {
         match expr {
             XPathExpr::LiteralString(s) => Ok(XPathValue::String(s.clone())),
             XPathExpr::LiteralNumber(n) => Ok(XPathValue::Number(*n)),
@@ -68,8 +108,9 @@ impl<'a> XPathEvaluator<'a> {
                 let mut current_nodes = vec![context_node];
                 for step in steps {
                     let mut next_nodes = Vec::new();
-                    for &ctx in &current_nodes {
-                        if let XPathValue::NodeSet(ns) = self.evaluate(step, ctx)? {
+                    let step_size = current_nodes.len();
+                    for (step_idx, &ctx) in current_nodes.iter().enumerate() {
+                        if let XPathValue::NodeSet(ns) = self.evaluate_internal(step, ctx, step_idx + 1, step_size)? {
                             next_nodes.extend(ns);
                         }
                     }
@@ -80,16 +121,22 @@ impl<'a> XPathEvaluator<'a> {
                 Ok(XPathValue::NodeSet(current_nodes))
             }
             XPathExpr::BinaryOp { op, left, right } => {
-                let lval = self.evaluate(left, context_node)?;
-                let rval = self.evaluate(right, context_node)?;
+                let lval = self.evaluate_internal(left, context_node, pos, size)?;
+                let rval = self.evaluate_internal(right, context_node, pos, size)?;
                 self.evaluate_binary(op, lval, rval)
             }
             XPathExpr::FunctionCall { name, args } => {
-                self.evaluate_function(name, args, context_node)
+                self.evaluate_function(name, args, context_node, pos, size)
             }
-            XPathExpr::VariableRef(var) => Err(XmlError::XPathError(format!(
-                "Unbound variable reference '${var}'"
-            ))),
+            XPathExpr::VariableRef(var) => {
+                if let Some(val) = self.variables.get(var) {
+                    Ok(val.clone())
+                } else {
+                    Err(XmlError::XPathError(format!(
+                        "Unbound variable reference '${var}'"
+                    )))
+                }
+            }
         }
     }
 
@@ -221,8 +268,9 @@ impl<'a> XPathEvaluator<'a> {
     fn apply_predicates(&self, mut nodes: Vec<NodeId>, predicates: &[XPathExpr]) -> Result<Vec<NodeId>> {
         for pred in predicates {
             let mut filtered = Vec::new();
+            let size = nodes.len();
             for (idx, &nid) in nodes.iter().enumerate() {
-                let pval = self.evaluate(pred, nid)?;
+                let pval = self.evaluate_internal(pred, nid, idx + 1, size)?;
                 let is_match = match pval {
                     XPathValue::Number(n) => (n as usize) == (idx + 1),
                     XPathValue::Boolean(b) => b,
@@ -270,13 +318,107 @@ impl<'a> XPathEvaluator<'a> {
         }
     }
 
-    fn evaluate_function(&self, name: &str, args: &[XPathExpr], ctx: NodeId) -> Result<XPathValue> {
+    fn evaluate_function(
+        &self,
+        name: &str,
+        args: &[XPathExpr],
+        ctx: NodeId,
+        pos: usize,
+        size: usize,
+    ) -> Result<XPathValue> {
         match name {
+            "position" => {
+                if !args.is_empty() {
+                    return Err(XmlError::XPathError("position() expects 0 arguments".into()));
+                }
+                Ok(XPathValue::Number(pos as f64))
+            }
+            "last" => {
+                if !args.is_empty() {
+                    return Err(XmlError::XPathError("last() expects 0 arguments".into()));
+                }
+                Ok(XPathValue::Number(size as f64))
+            }
+            "id" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("id() expects 1 argument".into()));
+                }
+                let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
+                let id_str = self.to_string(&val);
+                let mut res_nodes = Vec::new();
+                for token in id_str.split_whitespace() {
+                    if let Some(nid) = self.doc.get_element_by_id(token) {
+                        res_nodes.push(nid);
+                    }
+                }
+                Ok(XPathValue::NodeSet(res_nodes))
+            }
+            "namespace-uri" => {
+                let target_node = if args.is_empty() {
+                    ctx
+                } else if let XPathValue::NodeSet(ns) = self.evaluate_internal(&args[0], ctx, pos, size)? {
+                    *ns.first().unwrap_or(&ctx)
+                } else {
+                    ctx
+                };
+                let uri = self.doc.get_namespace_uri(target_node).unwrap_or_default();
+                Ok(XPathValue::String(uri))
+            }
+            "lang" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("lang() expects 1 argument".into()));
+                }
+                let target_lang = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?).to_ascii_lowercase();
+                let mut curr = Some(ctx);
+                let mut is_lang = false;
+                while let Some(nid) = curr {
+                    if let Some(node_lang) = self.doc.get_attribute(nid, "xml:lang") {
+                        let nl = node_lang.to_ascii_lowercase();
+                        if nl == target_lang || nl.starts_with(&format!("{}-", target_lang)) {
+                            is_lang = true;
+                        }
+                        break;
+                    }
+                    curr = self.doc.parent_id(nid);
+                }
+                Ok(XPathValue::Boolean(is_lang))
+            }
+            "ends-with" => {
+                if args.len() != 2 {
+                    return Err(XmlError::XPathError("ends-with() expects 2 arguments".into()));
+                }
+                let s1 = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let s2 = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
+                Ok(XPathValue::Boolean(s1.ends_with(&s2)))
+            }
+            "lower-case" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("lower-case() expects 1 argument".into()));
+                }
+                let s = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                Ok(XPathValue::String(s.to_lowercase()))
+            }
+            "upper-case" => {
+                if args.len() != 1 {
+                    return Err(XmlError::XPathError("upper-case() expects 1 argument".into()));
+                }
+                let s = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                Ok(XPathValue::String(s.to_uppercase()))
+            }
+            "replace" => {
+                if args.len() != 3 {
+                    return Err(XmlError::XPathError("replace() expects 3 arguments".into()));
+                }
+                let input = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let pattern = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
+                let replacement = self.to_string(&self.evaluate_internal(&args[2], ctx, pos, size)?);
+                Ok(XPathValue::String(input.replace(&pattern, &replacement)))
+            }
             "count" => {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("count() expects 1 argument".into()));
                 }
-                let val = self.evaluate(&args[0], ctx)?;
+                let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
                 let count = match val {
                     XPathValue::NodeSet(ns) => ns.len(),
                     _ => 0,
@@ -286,7 +428,7 @@ impl<'a> XPathEvaluator<'a> {
             "name" | "local-name" => {
                 let target_node = if args.is_empty() {
                     ctx
-                } else if let XPathValue::NodeSet(ns) = self.evaluate(&args[0], ctx)? {
+                } else if let XPathValue::NodeSet(ns) = self.evaluate_internal(&args[0], ctx, pos, size)? {
                     *ns.first().unwrap_or(&ctx)
                 } else {
                     ctx
@@ -302,7 +444,7 @@ impl<'a> XPathEvaluator<'a> {
                 if args.is_empty() {
                     Ok(XPathValue::String(self.get_node_text(ctx)))
                 } else {
-                    let val = self.evaluate(&args[0], ctx)?;
+                    let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
                     Ok(XPathValue::String(self.to_string(&val)))
                 }
             }
@@ -310,21 +452,21 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("boolean() expects 1 argument".into()));
                 }
-                let val = self.evaluate(&args[0], ctx)?;
+                let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
                 Ok(XPathValue::Boolean(self.to_bool(&val)))
             }
             "not" => {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("not() expects 1 argument".into()));
                 }
-                let val = self.evaluate(&args[0], ctx)?;
+                let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
                 Ok(XPathValue::Boolean(!self.to_bool(&val)))
             }
             "number" => {
                 if args.is_empty() {
                     Ok(XPathValue::Number(self.to_number(&XPathValue::String(self.get_node_text(ctx)))))
                 } else {
-                    let val = self.evaluate(&args[0], ctx)?;
+                    let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
                     Ok(XPathValue::Number(self.to_number(&val)))
                 }
             }
@@ -332,7 +474,7 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("sum() expects 1 argument".into()));
                 }
-                let val = self.evaluate(&args[0], ctx)?;
+                let val = self.evaluate_internal(&args[0], ctx, pos, size)?;
                 let total = match val {
                     XPathValue::NodeSet(ns) => ns
                         .iter()
@@ -346,30 +488,30 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 2 {
                     return Err(XmlError::XPathError("contains() expects 2 arguments".into()));
                 }
-                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
-                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
+                let s1 = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let s2 = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
                 Ok(XPathValue::Boolean(s1.contains(&s2)))
             }
             "starts-with" => {
                 if args.len() != 2 {
                     return Err(XmlError::XPathError("starts-with() expects 2 arguments".into()));
                 }
-                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
-                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
+                let s1 = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let s2 = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
                 Ok(XPathValue::Boolean(s1.starts_with(&s2)))
             }
             "string-length" => {
                 let s = if args.is_empty() {
                     self.get_node_text(ctx)
                 } else {
-                    self.to_string(&self.evaluate(&args[0], ctx)?)
+                    self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?)
                 };
                 Ok(XPathValue::Number(s.chars().count() as f64))
             }
             "concat" => {
                 let mut res = String::new();
                 for arg in args {
-                    let v = self.evaluate(arg, ctx)?;
+                    let v = self.evaluate_internal(arg, ctx, pos, size)?;
                     res.push_str(&self.to_string(&v));
                 }
                 Ok(XPathValue::String(res))
@@ -378,15 +520,15 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() < 2 || args.len() > 3 {
                     return Err(XmlError::XPathError("substring() expects 2 or 3 arguments".into()));
                 }
-                let s = self.to_string(&self.evaluate(&args[0], ctx)?);
-                let start_idx = self.to_number(&self.evaluate(&args[1], ctx)?) as i64 - 1;
+                let s = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let start_idx = self.to_number(&self.evaluate_internal(&args[1], ctx, pos, size)?) as i64 - 1;
                 let chars: Vec<char> = s.chars().collect();
                 if start_idx < 0 || (start_idx as usize) >= chars.len() {
                     return Ok(XPathValue::String(String::new()));
                 }
                 let start = start_idx as usize;
                 let len = if args.len() == 3 {
-                    self.to_number(&self.evaluate(&args[2], ctx)?) as usize
+                    self.to_number(&self.evaluate_internal(&args[2], ctx, pos, size)?) as usize
                 } else {
                     chars.len() - start
                 };
@@ -398,10 +540,10 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 2 {
                     return Err(XmlError::XPathError("substring-before() expects 2 arguments".into()));
                 }
-                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
-                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
-                if let Some(pos) = s1.find(&s2) {
-                    Ok(XPathValue::String(s1[..pos].to_string()))
+                let s1 = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let s2 = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
+                if let Some(pos_idx) = s1.find(&s2) {
+                    Ok(XPathValue::String(s1[..pos_idx].to_string()))
                 } else {
                     Ok(XPathValue::String(String::new()))
                 }
@@ -410,10 +552,10 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 2 {
                     return Err(XmlError::XPathError("substring-after() expects 2 arguments".into()));
                 }
-                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
-                let s2 = self.to_string(&self.evaluate(&args[1], ctx)?);
-                if let Some(pos) = s1.find(&s2) {
-                    Ok(XPathValue::String(s1[pos + s2.len()..].to_string()))
+                let s1 = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let s2 = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
+                if let Some(pos_idx) = s1.find(&s2) {
+                    Ok(XPathValue::String(s1[pos_idx + s2.len()..].to_string()))
                 } else {
                     Ok(XPathValue::String(String::new()))
                 }
@@ -422,7 +564,7 @@ impl<'a> XPathEvaluator<'a> {
                 let s = if args.is_empty() {
                     self.get_node_text(ctx)
                 } else {
-                    self.to_string(&self.evaluate(&args[0], ctx)?)
+                    self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?)
                 };
                 let words: Vec<&str> = s.split_whitespace().collect();
                 Ok(XPathValue::String(words.join(" ")))
@@ -431,17 +573,17 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 3 {
                     return Err(XmlError::XPathError("translate() expects 3 arguments".into()));
                 }
-                let s1 = self.to_string(&self.evaluate(&args[0], ctx)?);
-                let from = self.to_string(&self.evaluate(&args[1], ctx)?);
-                let to = self.to_string(&self.evaluate(&args[2], ctx)?);
+                let s1 = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
+                let from = self.to_string(&self.evaluate_internal(&args[1], ctx, pos, size)?);
+                let to = self.to_string(&self.evaluate_internal(&args[2], ctx, pos, size)?);
                 let from_chars: Vec<char> = from.chars().collect();
                 let to_chars: Vec<char> = to.chars().collect();
 
                 let mut result = String::new();
                 for ch in s1.chars() {
-                    if let Some(pos) = from_chars.iter().position(|&c| c == ch) {
-                        if pos < to_chars.len() {
-                            result.push(to_chars[pos]);
+                    if let Some(pos_idx) = from_chars.iter().position(|&c| c == ch) {
+                        if pos_idx < to_chars.len() {
+                            result.push(to_chars[pos_idx]);
                         }
                     } else {
                         result.push(ch);
@@ -453,26 +595,35 @@ impl<'a> XPathEvaluator<'a> {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("floor() expects 1 argument".into()));
                 }
-                let num = self.to_number(&self.evaluate(&args[0], ctx)?);
+                let num = self.to_number(&self.evaluate_internal(&args[0], ctx, pos, size)?);
                 Ok(XPathValue::Number(floor_f64(num)))
             }
             "ceiling" => {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("ceiling() expects 1 argument".into()));
                 }
-                let num = self.to_number(&self.evaluate(&args[0], ctx)?);
+                let num = self.to_number(&self.evaluate_internal(&args[0], ctx, pos, size)?);
                 Ok(XPathValue::Number(ceil_f64(num)))
             }
             "round" => {
                 if args.len() != 1 {
                     return Err(XmlError::XPathError("round() expects 1 argument".into()));
                 }
-                let num = self.to_number(&self.evaluate(&args[0], ctx)?);
+                let num = self.to_number(&self.evaluate_internal(&args[0], ctx, pos, size)?);
                 Ok(XPathValue::Number(round_f64(num)))
             }
             "true" => Ok(XPathValue::Boolean(true)),
             "false" => Ok(XPathValue::Boolean(false)),
-            _ => Err(XmlError::XPathError(format!("Unknown XPath function: '{name}'"))),
+            _ => {
+                if let Some(custom_fn) = self.custom_functions.get(name) {
+                    let mut eval_args = Vec::new();
+                    for arg in args {
+                        eval_args.push(self.evaluate_internal(arg, ctx, pos, size)?);
+                    }
+                    return custom_fn(&eval_args);
+                }
+                Err(XmlError::XPathError(format!("Unknown XPath function: '{name}'")))
+            }
         }
     }
 

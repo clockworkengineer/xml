@@ -46,19 +46,43 @@ pub struct DtdAttributeRule {
     pub attr_type: String,
     /// Default declaration (`#REQUIRED`, `#IMPLIED`, `#FIXED`).
     pub default_decl: String,
+    /// Extracted default literal value, if any.
+    pub default_value: Option<String>,
 }
 
-/// DTD validator enforcing element content model and attribute constraints.
-#[derive(Debug, Clone, Default)]
+/// External DTD subset resolution callback.
+pub type ExternalSubsetResolver = Arc<dyn Fn(&str, Option<&str>) -> Option<String> + Send + Sync>;
+
+/// DTD validator enforcing element content model, attribute constraints, and ID/IDREF integrity.
+#[derive(Clone, Default)]
 pub struct DtdValidator {
     elements: HashMap<String, DtdElementRule>,
     attributes: HashMap<String, Vec<DtdAttributeRule>>,
+    external_resolver: Option<ExternalSubsetResolver>,
+}
+
+impl core::fmt::Debug for DtdValidator {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DtdValidator")
+            .field("elements", &self.elements)
+            .field("attributes", &self.attributes)
+            .field("has_external_resolver", &self.external_resolver.is_some())
+            .finish()
+    }
 }
 
 impl DtdValidator {
     /// Instantiates a new empty [`DtdValidator`].
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets a custom resolver for external DTD subsets (`SYSTEM` and optional `PUBLIC` IDs).
+    pub fn set_external_resolver<F>(&mut self, resolver: F)
+    where
+        F: Fn(&str, Option<&str>) -> Option<String> + Send + Sync + 'static,
+    {
+        self.external_resolver = Some(Arc::new(resolver));
     }
 
     /// Parses internal DTD subset string (`<!ELEMENT ...>` and `<!ATTLIST ...>`).
@@ -92,10 +116,18 @@ impl DtdValidator {
                     let elem_name = parts[1].to_string();
                     let attr_name = parts[2].to_string();
                     let attr_type = parts[3].to_string();
-                    let default_decl = if parts.len() >= 5 {
-                        parts[4].to_string()
+                    let (default_decl, default_value) = if parts.len() >= 5 {
+                        let raw_decl = parts[4..].join(" ").trim_end_matches('>').trim().to_string();
+                        let def_val = if raw_decl.contains("#FIXED") {
+                            raw_decl.split_whitespace().nth(1).map(|v| v.trim_matches(|c| c == '"' || c == '\'').to_string())
+                        } else if raw_decl.starts_with('"') || raw_decl.starts_with('\'') {
+                            Some(raw_decl.trim_matches(|c| c == '"' || c == '\'').to_string())
+                        } else {
+                            None
+                        };
+                        (raw_decl, def_val)
                     } else {
-                        "#IMPLIED".to_string()
+                        ("#IMPLIED".to_string(), None)
                     };
                     self.attributes.entry(elem_name.clone()).or_default().push(
                         DtdAttributeRule {
@@ -103,6 +135,7 @@ impl DtdValidator {
                             attr_name,
                             attr_type,
                             default_decl,
+                            default_value,
                         },
                     );
                 }
@@ -111,17 +144,62 @@ impl DtdValidator {
         Ok(())
     }
 
+    /// Injects default attribute values defined in DTD into element nodes where the attribute is absent.
+    ///
+    /// Returns the total number of attributes injected.
+    pub fn apply_defaults(&self, doc: &mut Document) -> Result<usize> {
+        let mut count = 0;
+        if let Some(root_id) = doc.root_id() {
+            let mut stack = vec![root_id];
+            let mut to_insert = Vec::new();
+
+            while let Some(nid) = stack.pop() {
+                if let Some(node) = doc.get_node(nid) {
+                    if let NodeKind::Element { name, attributes } = &node.kind {
+                        if let Some(rules) = self.attributes.get(&**name) {
+                            for rule in rules {
+                                if let Some(def_val) = &rule.default_value {
+                                    if !attributes.iter().any(|a| *a.name == rule.attr_name) {
+                                        to_insert.push((nid, rule.attr_name.clone(), def_val.clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    stack.extend(node.children.iter().copied());
+                }
+            }
+
+            for (nid, attr_name, attr_val) in to_insert {
+                doc.set_attribute(nid, attr_name, attr_val)?;
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
     /// Validates a [`Document`] against loaded DTD rules.
     pub fn validate(&self, doc: &Document) -> Result<()> {
         if let Some(dtd_id) = doc.dtd_id() {
             if let Some(node) = doc.get_node(dtd_id) {
                 if let NodeKind::DocTypeDefinition {
-                    internal_subset: Some(subset),
-                    ..
+                    name: _,
+                    public_id,
+                    system_id,
+                    internal_subset,
                 } = &node.kind
                 {
                     let mut mut_self = self.clone();
-                    mut_self.parse_subset(subset)?;
+                    if let Some(sys) = system_id {
+                        if let Some(resolver) = &self.external_resolver {
+                            if let Some(ext_subset) = resolver(sys, public_id.as_deref()) {
+                                mut_self.parse_subset(&ext_subset)?;
+                            }
+                        }
+                    }
+                    if let Some(subset) = internal_subset {
+                        mut_self.parse_subset(subset)?;
+                    }
                     return mut_self.validate_doc(doc);
                 }
             }
@@ -130,8 +208,64 @@ impl DtdValidator {
     }
 
     fn validate_doc(&self, doc: &Document) -> Result<()> {
+        let mut id_set = HashMap::new();
+        let mut idref_list = Vec::new();
+
         if let Some(root_elem_id) = doc.root_element_id() {
+            self.collect_ids_and_idrefs(doc, root_elem_id, &mut id_set, &mut idref_list)?;
             self.validate_element(doc, root_elem_id)?;
+        }
+
+        for (ref_val, elem_name, attr_name) in idref_list {
+            if !id_set.contains_key(&ref_val) {
+                return Err(XmlError::DtdError(format!(
+                    "IDREF '{ref_val}' in attribute '{attr_name}' of <{elem_name}> does not match any declared ID"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn collect_ids_and_idrefs(
+        &self,
+        doc: &Document,
+        elem_id: NodeId,
+        id_set: &mut HashMap<String, NodeId>,
+        idref_list: &mut Vec<(String, String, String)>,
+    ) -> Result<()> {
+        if let Some(node) = doc.get_node(elem_id) {
+            if let NodeKind::Element { name, attributes } = &node.kind {
+                if let Some(attr_rules) = self.attributes.get(&**name) {
+                    for attr in attributes {
+                        if let Some(rule) = attr_rules.iter().find(|r| r.attr_name == *attr.name) {
+                            if rule.attr_type == "ID" {
+                                let id_val = attr.value.to_string();
+                                if id_set.contains_key(&id_val) {
+                                    return Err(XmlError::DtdError(format!(
+                                        "Duplicate ID value '{id_val}' in element <{name}>"
+                                    )));
+                                }
+                                id_set.insert(id_val, elem_id);
+                            } else if rule.attr_type == "IDREF" {
+                                idref_list.push((attr.value.to_string(), name.to_string(), attr.name.to_string()));
+                            } else if rule.attr_type == "IDREFS" {
+                                for single_ref in attr.value.split_whitespace() {
+                                    idref_list.push((single_ref.to_string(), name.to_string(), attr.name.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for &child_id in &node.children {
+                if let Some(child) = doc.get_node(child_id) {
+                    if matches!(child.kind, NodeKind::Element { .. }) {
+                        self.collect_ids_and_idrefs(doc, child_id, id_set, idref_list)?;
+                    }
+                }
+            }
         }
         Ok(())
     }

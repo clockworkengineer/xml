@@ -17,6 +17,7 @@ fn test_serialize_options_pretty_print() {
     let options = SerializeOptions {
         pretty_print: true,
         indent_step: 4,
+        ..Default::default()
     };
 
     let serialized = XmlSerializer::serialize_to_string(&doc, &options);

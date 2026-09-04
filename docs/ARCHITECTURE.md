@@ -2,25 +2,43 @@
 
 This document details the internal design, memory layout, security enforcement model, SOLID trait abstractions, and embedded systems architecture of the `xml_lib` Rust crate.
 
+For dedicated subsystem references, see:
+- [XML Namespaces 1.0 Guide](NAMESPACES_GUIDE.md)
+- [Canonical XML (C14N) Guide](CANONICALIZATION_C14N.md)
+- [XPath 1.0 Query Engine Guide](XPATH_GUIDE.md)
+- [DTD & XSD Schema Validation Guide](SCHEMA_VALIDATION.md)
+- [Serde & Streaming I/O Guide](SERDE_AND_STREAMING.md)
+- [Embedded & Microcontroller Guide](EMBEDDED_DEVELOPMENT.md)
+
 ---
 
 ## 1. System Overview & Data Flow
 
 ```mermaid
 flowchart TD
-    A[Raw Input Stream / Byte Slice / File] -->|BOM & Line Normalization| B[XmlSource]
+    A[Raw Input: Stream / Byte Slice / File] -->|BOM & Line Normalization| B[XmlSource]
     B -->|Zero-Copy Slice Tokens| C[XmlParser]
     B -->|Zero-Allocation Streaming| K[XmlPullParser]
     C -->|Security Limits Check| D[Document - Arena Model]
-    K -->|Borrowed XmlPullEvent| L[Embedded Microcontroller Application]
+    K -->|Borrowed XmlPullEvent| L[Embedded Microcontroller]
+    
     D --> E[XPathEngine]
     D --> F[DtdValidator]
     D --> G[XsdValidator]
+    D --> N[NamespaceScope Stack]
+    D --> O[doc.compact - Arena GC]
+    D --> P[serde_impl - from_str / to_string]
+    
     F ..->|Implements| M[XmlValidator Trait]
     G ..->|Implements| M
+    F -->|System / Public ID Hook| Q[ExternalSubsetResolver]
+    
     D --> H[XmlSerializer]
+    D --> R[CanonicalSerializer - C14N]
+    
     E -->|NodeSet / Primitive Result| I[Application Code]
     H -->|Streaming UTF-8 Output| J[XmlDestination]
+    R -->|Deterministic Canonical XML| S[Cryptographic Signature / Hashing]
 ```
 
 ---
@@ -62,7 +80,7 @@ pub struct NodeData {
 
 ## 3. SOLID Trait Abstraction (`XmlValidator`)
 
-To adhere to the Open/Closed Principle (OCP), Liskov Substitution Principle (LSP), and Dependency Inversion Principle (DIP), all document validation engines implement the abstract [`XmlValidator`](API_GUIDE.md#xmlvalidator) trait:
+To adhere to the Open/Closed Principle (OCP), Liskov Substitution Principle (LSP), and Dependency Inversion Principle (DIP), all document validation engines implement the abstract [`XmlValidator`](SCHEMA_VALIDATION.md#1-the-unified-xmlvalidator-trait) trait:
 
 ```rust
 pub trait XmlValidator {
@@ -71,8 +89,8 @@ pub trait XmlValidator {
 ```
 
 ### Implemented By
-- `DtdValidator`: Validates DTD internal subset content models (`<!ELEMENT>`) and required attributes.
-- `XsdValidator`: Validates W3C XML Schema definitions (`xs:schema`), element sequences, and restriction facets.
+- `DtdValidator`: Validates DTD internal subset content models (`<!ELEMENT>`), required attributes, and ID/IDREF referential integrity.
+- `XsdValidator`: Validates W3C XML Schema definitions (`xs:schema`), element sequences, choices, and restriction facets.
 - **Custom User Validators**: Applications can define custom schema or business rule validators and use them as trait objects (`&dyn XmlValidator`).
 
 ---
@@ -84,6 +102,8 @@ For microcontrollers and bare-metal environments (Cortex-M, ESP32, RISC-V):
 1. **`#![no_std]` + `alloc` Support**: When standard library integration is disabled (`default-features = false, features = ["alloc"]`), `xml_lib` compiles under `#![no_std]` using `alloc::vec::Vec`, `alloc::string::String`, and `alloc::collections::BTreeMap`.
 2. **Zero-Allocation Streaming Pull Parser (`XmlPullParser`)**: SAX-style streaming reader that emits borrowed events (`XmlPullEvent<'a>`) over a raw byte/string slice with zero heap allocation (`no_alloc`).
 3. **16-Bit Compact Arena (`small_nodes`)**: Cuts node index overhead down to 16 bits (`u16`), saving an additional 25% RAM per node.
+
+See the [Embedded Development Guide](EMBEDDED_DEVELOPMENT.md) for architecture-specific configurations.
 
 ---
 
@@ -112,17 +132,86 @@ pub struct ParseOptions {
 
 ---
 
-## 6. Subsystem Specifications
+## 6. XML Namespaces 1.0 Architecture
 
-### A. Parser Engine (`XmlParser`)
-- **Zero-Copy Scanning**: Operates on a UTF-8 string slice maintained by `XmlSource`. Tag names and attributes are tokenized via byte ranges and allocated into `Box<str>` in a single step.
-- **Line Ending Normalization**: Automatically normalizes CRLF (`\r\n`) and legacy CR (`\r`) line breaks to standard `\n`.
+Namespace resolution in `xml_lib_rust` is implemented as an ancestor-traversal lexical scope model:
 
-### B. Serializer (`XmlSerializer`)
-- **Allocation-Free Escaping**: Text and attribute character escaping (`&amp;`, `&lt;`, `&gt;`, `&quot;`) is streamed directly into `XmlDestination` without allocating temporary intermediate `String` instances.
-- **Pretty Printing**: Configurable indentation depth (`indent_step`) with text node whitespace preservation.
+```
+[ Root Element: xmlns="urn:default" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ]
+                                ^
+                                | (Inherits & Shadows)
+[ Child Element: soap:Body ] ---+
+                                ^
+                                | (Locally declared prefix overrides ancestor)
+[ Grandchild: xmlns:soap="urn:custom-soap" soap:Fault ]
+```
 
-### C. XPath 1.0 Subsystem (`XPathEngine`)
-- **Lexer & Parser**: Recursive descent operator-precedence parser generating an `XPathExpr` AST.
-- **13 Standard Axes**: Supports `child`, `descendant`, `parent`, `ancestor`, `following-sibling`, `preceding-sibling`, `following`, `preceding`, `attribute`, `namespace`, `self`, `descendant-or-self`, `ancestor-or-self`.
-- **$O(N \log N)$ Deduplication**: Multi-step path evaluations and `|` union operations sort node sets in-place (`sort_unstable()`) and call `dedup()`, eliminating quadratic $O(N^2)$ search loops.
+- **QName Parsing**: Separates qualified names into optional `prefix` and `local_name` slices.
+- **NamespaceScope Stack**: Used during parsing and canonicalization to maintain active lexical bindings.
+- **Dynamic Lookup**: `doc.lookup_prefix(node_id, uri)` and `doc.lookup_namespace_uri(node_id, prefix)` traverse the parent node graph upwards to the root, honoring nested lexical shadowing.
+
+---
+
+## 7. Canonical XML (C14N 1.0/1.1) Pipeline
+
+The `CanonicalSerializer` transforms an arbitrary in-memory DOM into standard Canonical XML:
+
+```
+                      +-------------------+
+                      |   DOM Document    |
+                      +-------------------+
+                                |
+             +------------------+------------------+
+             |                                     |
+             v                                     v
+   [ Namespace Declarations ]             [ Regular Attributes ]
+             |                                     |
+   Sorted lexicographically              Sorted lexicographically
+   by prefix (default first)             by Namespace URI then Local Name
+             |                                     |
+             +------------------+------------------+
+                                |
+                                v
+                     [ Start Element Tag ]
+                                |
+                     [ Child Nodes Recursion ]
+                                |
+                     [ End Element Tag ]
+                     (No empty-tag <tag/> syntax)
+```
+
+- **Encoding**: Strict UTF-8 with standard line breaks (`\n`).
+- **Entity Escaping**: Normalizes `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#xD;`, `&#xA;`, `&#x9;`.
+- **Comment Policy**: Parameterized via `CanonicalizeOptions::with_comments`.
+
+---
+
+## 8. XPath 1.0 Engine & Dynamic Function Dispatch
+
+The XPath subsystem consists of:
+1. **`XPathLexer`**: Tokenizes XPath query strings into axes, operators, node tests, numbers, strings, and variable references.
+2. **`XPathParser`**: Builds an `XPathExpr` AST with operator precedence parsing.
+3. **`XPathEvaluator`**:
+   - **Environment Table**: Stores runtime variable bindings (`$var`) mapped to `XPathValue`.
+   - **Function Registry**: Supports built-in XPath 1.0 library functions plus user-registered custom closures (`Fn(&[XPathValue]) -> Result<XPathValue>`).
+   - **Set Deduplication**: Sorts matching `NodeId` vectors and strips duplicates in $O(N \log N)$ time.
+
+---
+
+## 9. Arena Garbage Compaction Algorithm (`doc.compact()`)
+
+When nodes are removed from the DOM via `doc.remove_node()`, their slots in `Vec<NodeData>` are orphaned. To prevent unbounded memory growth in long-running embedded tasks:
+
+1. **Mark Phase**: Performs a depth-first traversal starting from all virtual roots (`root_id`, `prolog_id`). Nodes encountered are marked as reachable.
+2. **Allocation Phase**: Allocates a compacted vector containing only reachable nodes, calculating an index remapping table (`old_id -> new_id`).
+3. **Patch Phase**: Updates all `id`, `parent`, and `children` vectors across the new arena, as well as root container pointers (`declaration_id`, `dtd_id`, `root_id`).
+
+---
+
+## 10. Serde Data Binding Architecture
+
+The `serde_impl` module provides a DOM-backed `Deserializer` and `Serializer`:
+
+- **Structural Visitor**: `NodeDeserializer` wraps the current `Document` and `NodeId`. If the node contains child elements or attributes, it presents itself as a `MapAccess` (mapping tag names and attribute keys to values). If the node contains pure character data, it presents itself as a primitive scalar (`i64`, `u64`, `f64`, `bool`, `String`).
+- **Sequences**: Sibling elements sharing identical tag names are visited sequentially via `ElementSeqAccess`.
+- **Streaming Output**: `XmlSerWriter` serializes struct fields into matching open/close tags with automatic XML entity escaping.

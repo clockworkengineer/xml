@@ -85,6 +85,22 @@ pub struct XsdElementRule {
 }
 
 /// XSD Schema Validator.
+///
+/// # Examples
+///
+/// ```
+/// use xml_lib_rust::{parse, XsdValidator};
+///
+/// let schema = r#"
+/// <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+///   <xs:element name="note" type="xs:string"/>
+/// </xs:schema>
+/// "#;
+/// let mut validator = XsdValidator::new();
+/// validator.parse_schema(schema).unwrap();
+/// let doc = parse("<note>hello</note>").unwrap();
+/// assert!(validator.validate(&doc).is_ok());
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct XsdValidator {
     elements: HashMap<String, XsdElementRule>,

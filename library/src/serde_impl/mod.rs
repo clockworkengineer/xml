@@ -35,6 +35,22 @@ impl ser::Error for CustomSerError {
 impl std::error::Error for CustomSerError {}
 
 /// Deserializes an XML string into a Rust data structure.
+///
+/// # Examples
+///
+/// ```
+/// use serde::Deserialize;
+/// use xml_lib_rust::from_xml_str;
+///
+/// #[derive(Deserialize, PartialEq, Debug)]
+/// struct Config {
+///     port: u16,
+/// }
+///
+/// let xml = "<config><port>8080</port></config>";
+/// let cfg: Config = from_xml_str(xml).unwrap();
+/// assert_eq!(cfg.port, 8080);
+/// ```
 pub fn from_str<T: DeserializeOwned>(xml: &str) -> Result<T> {
     let doc = parse(xml)?;
     let root_id = doc.root_element_id().ok_or_else(|| {
@@ -50,6 +66,22 @@ pub fn to_string<T: Serialize>(value: &T) -> Result<String> {
 }
 
 /// Serializes a Rust data structure into an XML string with a custom root element name.
+///
+/// # Examples
+///
+/// ```
+/// use serde::Serialize;
+/// use xml_lib_rust::to_xml_string_with_root;
+///
+/// #[derive(Serialize)]
+/// struct Message {
+///     text: String,
+/// }
+///
+/// let msg = Message { text: "hello".into() };
+/// let xml = to_xml_string_with_root("msg", &msg).unwrap();
+/// assert_eq!(xml, "<msg><text>hello</text></msg>");
+/// ```
 pub fn to_string_with_root<T: Serialize>(root_tag: &str, value: &T) -> Result<String> {
     let mut writer = XmlSerWriter::new();
     writer.output.push('<');

@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 2. Zero-Allocation Streaming Pull Parsing (`XmlPullParser`)
 ```rust
-use xml_lib::{XmlPullEvent, XmlPullParser};
+use xml_lib_rust::{XmlPullEvent, XmlPullParser};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let xml = r#"<sensor id="temp_01" location="lab"><val>24.5</val></sensor>"#;
@@ -172,9 +172,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Documentation Links
 
+### Core & Technical Architecture
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Complete API Reference Guide](docs/API_GUIDE.md)
 - [Executable Code Examples](examples/)
+
+### Subsystem Deep-Dive Guides
+- [XML Namespaces 1.0 Guide](docs/NAMESPACES_GUIDE.md) - Scoping, prefix mapping, and QName decomposition
+- [Canonical XML (C14N) Guide](docs/CANONICALIZATION_C14N.md) - W3C C14N 1.0/1.1 deterministic serialization & XMLDSig
+- [XPath 1.0 Query Engine Guide](docs/XPATH_GUIDE.md) - 13 axes, node tests, predicates, variables, and custom functions
+- [DTD & XSD Schema Validation Guide](docs/SCHEMA_VALIDATION.md) - Unified `XmlValidator`, content models, compositors, and facets
+- [Serde & Streaming I/O Guide](docs/SERDE_AND_STREAMING.md) - Data binding, `parse_reader`, and legacy character encodings
+- [Embedded & Microcontroller Guide](docs/EMBEDDED_DEVELOPMENT.md) - `#![no_std]`, `small_nodes`, pull parsing, and arena compaction
+
+### Architectural & Refactor Plans
+- [Documentation Expansion & Codebase Plan](docs/documentation_expansion_plan.md)
 - [Missing Features & Full W3C/XPath Specification Refactor Plan](docs/missing_features_refactor_plan.md)
 - [Optimization & Performance Refactor Plan](docs/advanced_refactor_plan.md)
 - [DRY Consolidation Refactor Plan](docs/dry_refactor_plan.md)

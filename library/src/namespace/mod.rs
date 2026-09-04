@@ -64,6 +64,19 @@ impl QName {
 }
 
 /// Lexical scope stack managing active namespace prefix bindings during parsing.
+///
+/// # Examples
+///
+/// ```
+/// use xml_lib_rust::NamespaceScope;
+///
+/// let mut scope = NamespaceScope::new();
+/// scope.declare(Some("soap"), "http://schemas.xmlsoap.org/soap/envelope/");
+/// assert_eq!(
+///     scope.resolve_prefix(Some("soap")),
+///     Some("http://schemas.xmlsoap.org/soap/envelope/")
+/// );
+/// ```
 #[derive(Debug, Clone)]
 pub struct NamespaceScope {
     scopes: Vec<HashMap<String, String>>,

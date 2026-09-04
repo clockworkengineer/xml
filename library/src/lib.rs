@@ -56,6 +56,15 @@ pub use serde_impl::{
 
 /// Parse an XML string slice into a DOM `Document` using default parsing options.
 ///
+/// # Examples
+///
+/// ```
+/// use xml_lib_rust::parse;
+///
+/// let doc = parse("<root id=\"1\"><item>Data</item></root>").unwrap();
+/// assert_eq!(doc.get_root_element_name(), Some("root"));
+/// ```
+///
 /// # Errors
 /// Returns [`XmlError::SyntaxError`] if the input XML is malformed or violates syntax rules.
 pub fn parse(xml: &str) -> Result<Document> {
@@ -106,6 +115,16 @@ pub fn parse_reader<R: std::io::Read>(reader: R) -> Result<Document> {
 }
 
 /// Serialize a DOM `Document` into a formatted UTF-8 XML string representation.
+///
+/// # Examples
+///
+/// ```
+/// use xml_lib_rust::{parse, stringify};
+///
+/// let doc = parse("<status>online</status>").unwrap();
+/// let xml = stringify(&doc);
+/// assert!(xml.contains("<status>online</status>"));
+/// ```
 ///
 /// # Arguments
 /// * `doc` - Reference to target [`Document`].

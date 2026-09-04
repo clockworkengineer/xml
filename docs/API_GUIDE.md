@@ -1,6 +1,15 @@
 # XML Lib Complete API Reference Guide
 
-This document provides a comprehensive usage reference and code snippet guide for the public API surfaces of `xml_lib`.
+This document provides a comprehensive usage reference and code snippet guide for the public API surfaces of `xml_lib_rust`.
+
+> [!TIP]
+> For dedicated deep-dive guides into specific subsystems, see:
+> - [XML Namespaces 1.0 Guide](NAMESPACES_GUIDE.md)
+> - [Canonical XML (C14N) Guide](CANONICALIZATION_C14N.md)
+> - [XPath 1.0 Query Engine Guide](XPATH_GUIDE.md)
+> - [DTD & XSD Schema Validation Guide](SCHEMA_VALIDATION.md)
+> - [Serde & Streaming I/O Guide](SERDE_AND_STREAMING.md)
+> - [Embedded & Microcontroller Guide](EMBEDDED_DEVELOPMENT.md)
 
 ---
 
@@ -21,6 +30,7 @@ This document provides a comprehensive usage reference and code snippet guide fo
 13. [Canonical XML (W3C C14N 1.0/1.1)](#13-canonical-xml-w3c-c14n-1011)
 14. [Advanced Schema Validation (DTD & XSD)](#14-advanced-schema-validation-dtd--xsd)
 15. [Serde Data Binding & Streaming I/O](#15-serde-data-binding--streaming-io)
+16. [Public Type Reference Summary](#16-public-type-reference-summary)
 
 ---
 
@@ -390,7 +400,7 @@ doc.detach(first)?;
 let cloned = doc.clone_node(root_id, true)?;
 
 // Reclaim dead node memory via Arena Compaction
-let remapped_root = doc.compact();
+doc.compact()?;
 ```
 
 ---
@@ -539,4 +549,19 @@ let doc = parse_reader(cursor)?;
 let iso_bytes: &[u8] = b"<item name=\"Caf\xE9\"/>";
 let iso_doc = parse_bytes_with_encoding(iso_bytes, "ISO-8859-1")?;
 ```
+
+---
+
+## 16. Public Type Reference Summary
+
+| Type / Trait | Module | Primary Purpose | Key Methods |
+| :--- | :--- | :--- | :--- |
+| `Document` | `document` | Flat contiguous arena DOM container | `parse_str`, `root_element_id`, `compact`, `get_prefix` |
+| `XmlPullParser` | `parser::pull_parser` | Zero-allocation streaming event reader | `new`, `next_event` |
+| `XPathEngine` | `xpath` | XPath 1.0 AST parser and evaluator | `evaluate`, `evaluate_nodes`, `set_variable`, `register_function` |
+| `XmlValidator` | `validator` | Abstract schema validation trait | `validate(&self, doc: &Document) -> Result<()>` |
+| `DtdValidator` | `dtd` | DTD subset parsing and validation | `parse_subset`, `apply_defaults`, `set_external_resolver` |
+| `XsdValidator` | `xsd` | W3C XML Schema parsing and validation | `parse_schema`, `validate` |
+| `CanonicalSerializer`| `stringify::canonical`| W3C C14N 1.0/1.1 deterministic serialization | `canonicalize(&doc, &options)` |
+| `NamespaceScope` | `namespace` | Lexical namespace prefix tracking | `push_scope`, `pop_scope`, `declare`, `lookup_uri` |
 

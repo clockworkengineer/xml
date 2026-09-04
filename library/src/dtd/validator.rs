@@ -54,6 +54,18 @@ pub struct DtdAttributeRule {
 pub type ExternalSubsetResolver = Arc<dyn Fn(&str, Option<&str>) -> Option<String> + Send + Sync>;
 
 /// DTD validator enforcing element content model, attribute constraints, and ID/IDREF integrity.
+///
+/// # Examples
+///
+/// ```
+/// use xml_lib_rust::{parse, DtdValidator};
+///
+/// let mut validator = DtdValidator::new();
+/// let dtd = "<!ELEMENT root (item*)>\n<!ELEMENT item EMPTY>";
+/// validator.parse_subset(dtd).unwrap();
+/// let doc = parse("<root><item/></root>").unwrap();
+/// assert!(validator.validate(&doc).is_ok());
+/// ```
 #[derive(Clone, Default)]
 pub struct DtdValidator {
     elements: HashMap<String, DtdElementRule>,

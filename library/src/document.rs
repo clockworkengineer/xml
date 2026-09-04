@@ -42,6 +42,25 @@ impl Document {
         doc
     }
 
+    /// Parses an XML string slice into a new [`Document`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xml_lib_rust::Document;
+    ///
+    /// let doc = Document::parse_str("<root><child/></root>").unwrap();
+    /// assert_eq!(doc.get_root_element_name(), Some("root"));
+    /// ```
+    pub fn parse_str(xml: &str) -> Result<Self> {
+        crate::parse(xml)
+    }
+
+    /// Returns the tag name of the root element if one exists.
+    pub fn get_root_element_name(&self) -> Option<&str> {
+        self.root_element_id().and_then(|id| self.get_node(id)).map(|n| n.kind.name())
+    }
+
     /// Appends a new node kind to the arena and returns its unique [`NodeId`].
     pub fn add_node(&mut self, kind: NodeKind) -> NodeId {
         let id = self.nodes.len() as NodeId;
@@ -135,7 +154,22 @@ impl Document {
         Ok(())
     }
 
+    /// Detaches a node from its parent and unlinks it from the DOM tree.
+    pub fn remove_node(&mut self, node_id: NodeId) -> Result<()> {
+        self.detach(node_id)
+    }
+
     /// Creates a new unattached element node in the document arena.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xml_lib_rust::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// let elem = doc.create_element("item");
+    /// assert_eq!(doc.get_node(elem).unwrap().kind.name(), "item");
+    /// ```
     pub fn create_element(&mut self, name: impl Into<Box<str>>) -> NodeId {
         self.add_node(NodeKind::Element {
             name: name.into(),
@@ -144,6 +178,16 @@ impl Document {
     }
 
     /// Creates a new unattached text node in the document arena.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xml_lib_rust::Document;
+    ///
+    /// let mut doc = Document::new();
+    /// let text = doc.create_text_node("Hello, XML!");
+    /// assert_eq!(doc.get_text_content(text), "Hello, XML!");
+    /// ```
     pub fn create_text_node(&mut self, text: impl Into<Box<str>>) -> NodeId {
         self.add_node(NodeKind::Text(text.into()))
     }
@@ -408,6 +452,18 @@ impl Document {
     /// Garbage collects unreferenced nodes and compacts the arena vector.
     /// Traverses all reachable nodes starting from virtual containers (Root and Prolog),
     /// remaps all `NodeId` identifiers, and rebuilds the internal arena.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xml_lib_rust::Document;
+    ///
+    /// let mut doc = Document::parse_str("<root><a/><b/></root>").unwrap();
+    /// let b_id = doc.get_elements_by_tag_name("b")[0];
+    /// doc.remove_node(b_id).unwrap();
+    /// doc.compact().unwrap();
+    /// assert_eq!(doc.get_elements_by_tag_name("b").len(), 0);
+    /// ```
     pub fn compact(&mut self) -> Result<()> {
         let mut reachable = vec![false; self.nodes.len()];
         let mut stack = Vec::new();

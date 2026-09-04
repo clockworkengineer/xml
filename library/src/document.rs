@@ -135,6 +135,19 @@ impl Document {
         Ok(())
     }
 
+    /// Creates a new unattached element node in the document arena.
+    pub fn create_element(&mut self, name: impl Into<Box<str>>) -> NodeId {
+        self.add_node(NodeKind::Element {
+            name: name.into(),
+            attributes: Vec::new(),
+        })
+    }
+
+    /// Creates a new unattached text node in the document arena.
+    pub fn create_text_node(&mut self, text: impl Into<Box<str>>) -> NodeId {
+        self.add_node(NodeKind::Text(text.into()))
+    }
+
     /// Sets or updates an attribute on an [`NodeKind::Element`] node.
     pub fn set_attribute(&mut self, elem_id: NodeId, name: impl Into<Box<str>>, value: impl Into<Box<str>>) -> Result<()> {
         let idx = elem_id as usize;

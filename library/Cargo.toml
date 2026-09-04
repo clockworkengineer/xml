@@ -104,3 +104,23 @@ path = "../examples/xsd_file_validation.rs"
 [[example]]
 name = "xsd_type_restrictions"
 path = "../examples/xsd_type_restrictions.rs"
+
+[[example]]
+name = "canonical_xml"
+path = "../examples/canonical_xml.rs"
+
+[[example]]
+name = "namespaces"
+path = "../examples/namespaces.rs"
+
+[[example]]
+name = "dom_mutations"
+path = "../examples/dom_mutations.rs"
+
+[[example]]
+name = "xpath_advanced"
+path = "../examples/xpath_advanced.rs"
+
+[[example]]
+name = "streaming_io"
+path = "../examples/streaming_io.rs"

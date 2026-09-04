@@ -38,6 +38,9 @@ impl Default for SerializeOptions {
 pub struct XmlSerializer;
 
 impl XmlSerializer {
+    /// Maximum element nesting depth allowed during serialization (512 frames).
+    pub const MAX_SERIALIZE_DEPTH: usize = 512;
+
     /// Serializes a [`Document`] DOM tree into a formatted string.
     pub fn serialize_to_string(doc: &Document, options: &SerializeOptions) -> String {
         let mut dest = XmlDestination::new();
@@ -129,6 +132,10 @@ impl XmlSerializer {
         options: &SerializeOptions,
         dest: &mut XmlDestination,
     ) {
+        if indent_level > Self::MAX_SERIALIZE_DEPTH {
+            return;
+        }
+
         let node = match doc.get_node(node_id) {
             Some(n) => n,
             None => return,

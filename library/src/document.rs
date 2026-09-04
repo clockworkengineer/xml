@@ -72,12 +72,37 @@ impl Document {
         id
     }
 
+    /// Validates hierarchy rules preventing self-insertion or cyclic ancestor-child relationships (W3C HierarchyRequestError).
+    fn validate_hierarchy(&self, parent_id: NodeId, child_id: NodeId) -> Result<()> {
+        if parent_id == child_id {
+            return Err(XmlError::NodeError(
+                "HierarchyRequestError: Cannot insert a node into itself".into(),
+            ));
+        }
+        let mut curr = Some(parent_id);
+        while let Some(ancestor_id) = curr {
+            if ancestor_id == child_id {
+                return Err(XmlError::NodeError(
+                    "HierarchyRequestError: Cannot insert an ancestor node as a child of its descendant".into(),
+                ));
+            }
+            curr = self.nodes.get(ancestor_id as usize).and_then(|n| n.parent);
+        }
+        Ok(())
+    }
+
     /// Links a child node to a parent node within the arena.
     pub fn append_child(&mut self, parent_id: NodeId, child_id: NodeId) -> Result<()> {
         let p_idx = parent_id as usize;
         let c_idx = child_id as usize;
         if p_idx >= self.nodes.len() || c_idx >= self.nodes.len() {
             return Err(XmlError::NodeError("Invalid Node ID".into()));
+        }
+        self.validate_hierarchy(parent_id, child_id)?;
+        if let Some(old_parent) = self.nodes[c_idx].parent {
+            if old_parent != parent_id {
+                self.remove_child(old_parent, child_id)?;
+            }
         }
         self.nodes[c_idx].parent = Some(parent_id);
         if !self.nodes[p_idx].children.contains(&child_id) {
@@ -111,6 +136,7 @@ impl Document {
         if p_idx >= self.nodes.len() || n_idx >= self.nodes.len() || r_idx >= self.nodes.len() {
             return Err(XmlError::NodeError("Invalid Node ID".into()));
         }
+        self.validate_hierarchy(parent_id, new_child_id)?;
         if let Some(old_parent) = self.nodes[n_idx].parent {
             self.remove_child(old_parent, new_child_id)?;
         }
@@ -132,6 +158,7 @@ impl Document {
         if p_idx >= self.nodes.len() || n_idx >= self.nodes.len() || o_idx >= self.nodes.len() {
             return Err(XmlError::NodeError("Invalid Node ID".into()));
         }
+        self.validate_hierarchy(parent_id, new_child_id)?;
         if let Some(old_parent) = self.nodes[n_idx].parent {
             self.remove_child(old_parent, new_child_id)?;
         }

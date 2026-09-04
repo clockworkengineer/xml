@@ -230,3 +230,113 @@ fn test_xml_source_slice_range_safe_on_invalid_boundaries() {
     let oob_slice = source.slice_range(10, 20);
     assert_eq!(oob_slice, "");
 }
+
+#[test]
+fn test_dom_hierarchy_cycle_prevention() {
+    let mut doc = Document::new();
+    let root = doc.create_element("root");
+    let child = doc.create_element("child");
+    let grandchild = doc.create_element("grandchild");
+
+    doc.append_child(root, child).unwrap();
+    doc.append_child(child, grandchild).unwrap();
+
+    // 1. Cannot append node into itself
+    let self_append = doc.append_child(root, root);
+    assert!(self_append.is_err());
+    assert!(self_append.unwrap_err().to_string().contains("HierarchyRequestError"));
+
+    // 2. Cannot append ancestor as child of descendant (would create cycle)
+    let cycle_append = doc.append_child(grandchild, root);
+    assert!(cycle_append.is_err());
+    assert!(cycle_append.unwrap_err().to_string().contains("HierarchyRequestError"));
+
+    // 3. Cannot insert ancestor before reference child
+    let leaf = doc.create_element("leaf");
+    doc.append_child(grandchild, leaf).unwrap();
+    let cycle_insert = doc.insert_before(grandchild, root, leaf);
+    assert!(cycle_insert.is_err());
+    assert!(cycle_insert.unwrap_err().to_string().contains("HierarchyRequestError"));
+}
+
+#[test]
+fn test_streaming_io_limit_enforced() {
+    use std::io::Read;
+    // 2 KB stream with a 1 KB limit
+    let stream = std::io::repeat(b'x').take(2048);
+    let res = xml_lib_rust::XmlSource::from_reader_with_limit(stream, 1024);
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        XmlError::SecurityLimitExceeded(msg) => {
+            assert!(msg.contains("Input stream exceeds maximum allowed XML stream size"));
+        }
+        other => panic!("Expected SecurityLimitExceeded, got: {other:?}"),
+    }
+
+    // Valid stream within limit
+    let valid_stream = "<root><data>123</data></root>".as_bytes();
+    let res_ok = xml_lib_rust::XmlSource::from_reader_with_limit(valid_stream, 1024);
+    assert!(res_ok.is_ok());
+}
+
+#[test]
+fn test_xpath_parser_depth_limit() {
+    // Generate 150 nested parentheses: (((... 42 ...)))
+    let mut expr = String::new();
+    for _ in 0..150 {
+        expr.push('(');
+    }
+    expr.push_str("42");
+    for _ in 0..150 {
+        expr.push(')');
+    }
+
+    let mut parser = xml_lib_rust::xpath::parser::XPathParser::new(&expr).unwrap();
+    let res = parser.parse_expression();
+    assert!(res.is_err());
+    match res.unwrap_err() {
+        XmlError::XPathError(msg) => {
+            assert!(msg.contains("maximum nesting depth"));
+        }
+        other => panic!("Expected XPathError, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_pull_parser_attribute_iteration_clean_termination() {
+    use xml_lib_rust::XmlPullParser;
+    // Malformed attribute with unclosed quote
+    let xml = r#"<tag valid="yes" unclosed="no_end_quote"#;
+    let mut parser = XmlPullParser::new(xml);
+    let event = parser.next_event();
+    // Pull parser next_event returns syntax error on unclosed tag
+    assert!(event.is_err());
+
+    // Well-formed element with malformed attribute trailer
+    let xml2 = r#"<tag valid="yes" trailing_garbage >"#;
+    let mut parser2 = XmlPullParser::new(xml2);
+    if let Ok(Some(ev)) = parser2.next_event() {
+        let mut iter = ev.attributes();
+        let first = iter.next();
+        assert!(first.is_some());
+        assert_eq!(first.unwrap().name, "valid");
+        // Next attribute is malformed -> must return None cleanly
+        assert!(iter.next().is_none());
+        // Subsequent calls must also return None cleanly
+        assert!(iter.next().is_none());
+    }
+}
+
+#[test]
+fn test_validator_and_serializer_depth_constants() {
+    use xml_lib_rust::dtd::validator::DtdValidator;
+    use xml_lib_rust::xsd::validator::XsdValidator;
+    use xml_lib_rust::stringify::serializer::XmlSerializer;
+    use xml_lib_rust::stringify::canonical::CanonicalSerializer;
+
+    assert_eq!(DtdValidator::MAX_VALIDATION_DEPTH, 512);
+    assert_eq!(XsdValidator::MAX_VALIDATION_DEPTH, 512);
+    assert_eq!(XmlSerializer::MAX_SERIALIZE_DEPTH, 512);
+    assert_eq!(CanonicalSerializer::MAX_CANONICAL_DEPTH, 512);
+}
+

@@ -37,15 +37,20 @@ pub struct XPathEvaluator<'a> {
     pub variables: HashMap<String, XPathValue>,
     /// Custom function callbacks.
     pub custom_functions: HashMap<String, XPathCustomFn>,
+    depth: core::cell::Cell<usize>,
 }
 
 impl<'a> XPathEvaluator<'a> {
+    /// Maximum recursive call depth during XPath evaluation (256 frames).
+    pub const MAX_EVAL_DEPTH: usize = 256;
+
     /// Instantiates a new [`XPathEvaluator`] for a target [`Document`].
     pub fn new(doc: &'a Document) -> Self {
         Self {
             doc,
             variables: HashMap::new(),
             custom_functions: HashMap::new(),
+            depth: core::cell::Cell::new(0),
         }
     }
 
@@ -75,6 +80,21 @@ impl<'a> XPathEvaluator<'a> {
         pos: usize,
         size: usize,
     ) -> Result<XPathValue> {
+        let current_depth = self.depth.get();
+        if current_depth >= Self::MAX_EVAL_DEPTH {
+            return Err(XmlError::XPathError(
+                "XPath evaluation exceeded maximum recursion depth (256)".into(),
+            ));
+        }
+        self.depth.set(current_depth + 1);
+        struct DepthGuard<'b>(&'b core::cell::Cell<usize>);
+        impl<'b> Drop for DepthGuard<'b> {
+            fn drop(&mut self) {
+                self.0.set(self.0.get().saturating_sub(1));
+            }
+        }
+        let _guard = DepthGuard(&self.depth);
+
         match expr {
             XPathExpr::LiteralString(s) => Ok(XPathValue::String(s.clone())),
             XPathExpr::LiteralNumber(n) => Ok(XPathValue::Number(*n)),

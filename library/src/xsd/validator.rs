@@ -315,15 +315,23 @@ impl XsdValidator {
         rest
     }
 
+    /// Maximum element nesting depth allowed during validation (512 frames).
+    pub const MAX_VALIDATION_DEPTH: usize = 512;
+
     /// Validates a DOM [`Document`] against loaded XSD schema rules.
     pub fn validate(&self, doc: &Document) -> Result<()> {
         if let Some(root_id) = doc.root_element_id() {
-            self.validate_element(doc, root_id)?;
+            self.validate_element(doc, root_id, 0)?;
         }
         Ok(())
     }
 
-    fn validate_element(&self, doc: &Document, elem_id: NodeId) -> Result<()> {
+    fn validate_element(&self, doc: &Document, elem_id: NodeId, depth: usize) -> Result<()> {
+        if depth > Self::MAX_VALIDATION_DEPTH {
+            return Err(XmlError::XsdError(
+                "Document exceeds maximum validation nesting depth (512)".into(),
+            ));
+        }
         let node = doc
             .get_node(elem_id)
             .ok_or_else(|| XmlError::XsdError("Invalid node".into()))?;
@@ -479,7 +487,7 @@ impl XsdValidator {
             for &c_id in &node.children {
                 if let Some(c) = doc.get_node(c_id) {
                     if matches!(c.kind, NodeKind::Element { .. }) {
-                        self.validate_element(doc, c_id)?;
+                        self.validate_element(doc, c_id, depth + 1)?;
                     }
                 }
             }

@@ -26,11 +26,14 @@ impl Default for CanonicalOptions {
 pub struct CanonicalSerializer;
 
 impl CanonicalSerializer {
+    /// Maximum element nesting depth allowed during canonicalization (512 frames).
+    pub const MAX_CANONICAL_DEPTH: usize = 512;
+
     /// Serializes a [`Document`] to a canonical XML string according to W3C C14N rules.
     pub fn canonicalize(doc: &Document, options: &CanonicalOptions) -> String {
         let mut dest = XmlDestination::new();
         if let Some(root_elem_id) = doc.root_element_id() {
-            Self::serialize_canonical_node(doc, root_elem_id, options, &mut dest);
+            Self::serialize_canonical_node(doc, root_elem_id, options, &mut dest, 0);
         }
         dest.into_string()
     }
@@ -40,7 +43,12 @@ impl CanonicalSerializer {
         node_id: NodeId,
         options: &CanonicalOptions,
         dest: &mut XmlDestination,
+        depth: usize,
     ) {
+        if depth > Self::MAX_CANONICAL_DEPTH {
+            return;
+        }
+
         let node = match doc.get_node(node_id) {
             Some(n) => n,
             None => return,
@@ -79,7 +87,7 @@ impl CanonicalSerializer {
 
                 // Serialize children
                 for &child_id in &node.children {
-                    Self::serialize_canonical_node(doc, child_id, options, dest);
+                    Self::serialize_canonical_node(doc, child_id, options, dest, depth + 1);
                 }
 
                 // C14N: Empty elements are NEVER self-closing (<elem></elem>)

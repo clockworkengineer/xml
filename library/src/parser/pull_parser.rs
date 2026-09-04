@@ -91,18 +91,20 @@ impl<'a> Iterator for XmlPullAttributesIter<'a> {
         if let Some((name_part, rest)) = trimmed.split_once('=') {
             let attr_name = name_part.trim();
             let val_part = rest.trim_start();
-            let quote_char = val_part.chars().next()?;
-            if quote_char == '"' || quote_char == '\'' {
-                if let Some(end_quote) = val_part[1..].find(quote_char) {
-                    let attr_val = &val_part[1..1 + end_quote];
-                    self.raw = &val_part[1 + end_quote + 1..];
-                    return Some(XmlPullAttribute {
-                        name: attr_name,
-                        value: attr_val,
-                    });
+            if let Some(quote_char) = val_part.chars().next() {
+                if quote_char == '"' || quote_char == '\'' {
+                    if let Some(end_quote) = val_part[1..].find(quote_char) {
+                        let attr_val = &val_part[1..1 + end_quote];
+                        self.raw = &val_part[1 + end_quote + 1..];
+                        return Some(XmlPullAttribute {
+                            name: attr_name,
+                            value: attr_val,
+                        });
+                    }
                 }
             }
         }
+        self.raw = "";
         None
     }
 }

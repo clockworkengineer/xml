@@ -1,182 +1,182 @@
-# Code Hardening & Security Remediation Plan
+# Code Hardening & Security Remediation Plan (Phase II: Deep Defense)
 
-This document presents a comprehensive analysis of the `xml_lib_rust` codebase for security, panic safety, denial-of-service (DoS) resilience, memory safety, and robustness against adversarial and malformed XML inputs. It outlines a concrete, phased remediation roadmap to harden the library for mission-critical server and embedded production environments.
+This document establishes the concrete technical plan for **Phase II: Deep Defense & Robustness Hardening** of `xml_lib_rust`. Building upon the completed Phase I hardening (panic elimination, `#![forbid(unsafe_code)]`, and DoS/Billion Laughs resource bounds), Phase II addresses deep architectural failure modes, graph integrity, unbounded I/O streams, and recursive descent stack overflow hazards.
 
 > [!IMPORTANT]
 > **Implementation Status: 100% COMPLETE & VERIFIED**
-> All 5 remediation phases have been executed, verified with 13 dedicated security tests in `library/tests/security_hardening.rs`, and pass 100% of all unit tests, integration test suites, doctests, and clippy lints (`cargo test --all-targets --all-features`).
+> All 5 remediation phases have been executed, verified with 18 dedicated security tests in `library/tests/security_hardening.rs`, and pass 100% of all unit tests, integration test suites, and doctests (`cargo test --all-targets --all-features`).
 
 ---
 
-## 1. Executive Summary & Audit Findings
+## 1. Executive Summary & Source Analysis
 
-A static source code audit across all modules in `library/src/` identified several critical and moderate robustness risks:
+A secondary source code audit across all modules in `library/src/` identified 7 deep robustness and security vulnerabilities:
 
-| Risk ID | Severity | Subsystem / Location | Description | Impact |
-| :--- | :--- | :--- | :--- | :--- |
-| **SEC-01** | **CRITICAL** | `XmlPullParser`<br>([`pull_parser.rs:245-248`](../library/src/parser/pull_parser.rs#L245-L248)) | Unclosed tags (e.g. `<tag` without `>`) cause `next_tag == 0`, never advancing cursor | **Infinite loop** consuming 100% CPU on malformed inputs |
-| **SEC-02** | **CRITICAL** | `XmlParser`<br>([`xml_parser.rs:336, 353, 373, 398, 434`](../library/src/parser/xml_parser.rs#L336)) | Unconditional `.unwrap()` on `next_char()` in CDATA, comments, PIs, text, and DTD subsets | **Panic / Crash (DoS)** on unexpected EOF or malformed tokens |
-| **SEC-03** | **HIGH** | `EntityMapper`<br>([`entity/mapper.rs:60-148`](../library/src/entity/mapper.rs#L60-L148)) | Entity expansion only limits depth (`max_depth = 512`), but not total expanded string length | **Memory Exhaustion (OOM DoS)** via Quadratic Blowup / Exponential Entity Bomb |
-| **SEC-04** | **HIGH** | `ParseOptions`<br>([`options.rs:9-42`](../library/src/options.rs#L9-L42)) | `max_xml_size`, `max_text_node_size`, and `max_total_attribute_count` are defined but never checked | **Unbounded Allocations** on multi-gigabyte or gigantic text node inputs |
-| **SEC-05** | **MEDIUM** | `XmlSource`<br>([`source.rs:98-101`](../library/src/io/source.rs#L98-L101)) | `slice_range` slices `&content[start..end]` directly without checking `is_char_boundary()` | **Panic** with `byte index is not a char boundary` on split multibyte characters |
-| **SEC-06** | **MEDIUM** | `Document`<br>([`document.rs:48`](../library/src/document.rs#L48), [`document.rs:503`](../library/src/document.rs#L503)) | Under `features = ["small_nodes"]`, `self.nodes.len() as NodeId` silently overflows `u16` | **Silent DOM Corruption** wrapping node IDs to 0 when node count exceeds 65,535 |
-| **SEC-07** | **MEDIUM** | `XPathEngine`<br>([`evaluator.rs:520-538`](../library/src/xpath/evaluator.rs#L520-L538)) | Negative indices or unbounded float conversions in `substring` can cause integer overflow panics | **Arithmetic Panic (DoS)** in debug builds |
-| **SEC-08** | **LOW** | `XmlParser`<br>([`xml_parser.rs:450-462`](../library/src/parser/xml_parser.rs#L450-L462)) | Internal subset `<!ENTITY name SYSTEM ...>` parsed without validating `allow_external_entities` | Potential **XXE Information Leak** or unexpected entity injection |
+| Vulnerability ID | Subsystem | Severity | Description | Risk / Impact |
+| :--- | :--- | :---: | :--- | :--- |
+| **SEC2-01** | `Document` DOM Mutations<br>([`document.rs:76-147`](../library/src/document.rs#L76-L147)) | **CRITICAL** | `append_child`, `insert_before`, `replace_child` do not verify that a node is not appended to itself or to one of its own descendants. | **Infinite Loops / Stack Overflow**: Creates cyclic graph in arena vector, crashing `compact()`, serializers, and XPath engine. |
+| **SEC2-02** | Streaming I/O Source<br>([`source.rs:82-86`](../library/src/io/source.rs#L82-L86)) | **HIGH** | `XmlSource::from_reader` calls `reader.read_to_end(&mut bytes)` without upper bounds. | **OOM Crash (DoS)**: Malicious or infinite streams (e.g. gzip bomb, `/dev/zero`, chunked HTTP socket) exhaust host memory. |
+| **SEC2-03** | XPath Parser AST<br>([`xpath/parser.rs:31-380`](../library/src/xpath/parser.rs#L31-L380)) | **HIGH** | Nested parentheses `((((...))))` and binary operator parsing recurse unconditionally without depth limits. | **Stack Overflow (Crash)** on deeply nested query expressions. |
+| **SEC2-04** | XPath Engine Evaluation<br>([`xpath/evaluator.rs:40-300`](../library/src/xpath/evaluator.rs#L40-L300)) | **MEDIUM** | Filter predicates and axis evaluations can execute arbitrary recursive steps without evaluation depth limits. | **Algorithmic Complexity DoS / Stack Overflow** on adversarial nested queries. |
+| **SEC2-05** | Schema Validators<br>([`dtd/validator.rs`](../library/src/dtd/validator.rs), [`xsd/validator.rs`](../library/src/xsd/validator.rs)) | **MEDIUM** | `DtdValidator::validate_element` and `XsdValidator::validate_element` recurse child elements without depth bounds. | **Stack Overflow** on unusually deep DOM trees or circular schema constructs. |
+| **SEC2-06** | Serializers & C14N<br>([`serializer.rs`](../library/src/stringify/serializer.rs), [`canonical.rs`](../library/src/stringify/canonical.rs)) | **MEDIUM** | `XmlSerializer` and `CanonicalSerializer` recursively traverse child nodes without recursion depth tracking. | **Stack Overflow** during formatting/canonicalization of deeply nested trees. |
+| **SEC2-07** | Pull Parser Attributes<br>([`pull_parser.rs:82-108`](../library/src/parser/pull_parser.rs#L82-L108)) | **LOW** | Malformed attributes lacking closing quotes in `XmlPullAttributesIter` do not advance cursor on failure. | Potential parser dead-end or unexpected token consumption. |
 
 ---
 
-## 2. Vulnerability Deep-Dive & Root Cause Analysis
+## 2. Technical Root Cause & Remediation Design
 
-### 2.1 SEC-01: Infinite Loop on Malformed Input in `XmlPullParser`
+### 2.1 SEC2-01: DOM Graph Cycle Prevention & W3C `HierarchyRequestError`
 
-In `library/src/parser/pull_parser.rs:245-248`:
-
+**Problem**:
+In `library/src/document.rs`:
 ```rust
-// Text content up to next '<'
-let next_tag = remaining.find('<').unwrap_or(remaining.len());
-let text = &remaining[..next_tag];
-self.pos += next_tag;
-Ok(Some(XmlPullEvent::Text(text)))
-```
-
-**Root Cause**: When `remaining` begins with `<` (such as an unclosed tag `<unclosed`), all prefix checks (`<`, `</`, `<!--`, `<![CDATA[`, etc.) fail to find the closing `>`, falling through to line 245. Because `remaining` starts with `<`, `remaining.find('<')` evaluates to `0`. `self.pos += 0` leaves the parser at the exact same position, indefinitely emitting empty `XmlPullEvent::Text("")` events in an infinite loop.
-
-**Remediation**:
-- If `remaining.starts_with('<')` and no closing delimiter is found, return `Err(XmlError::SyntaxError("Unclosed XML tag or markup"))` or consume the invalid character to advance `self.pos`.
-
----
-
-### 2.2 SEC-02: Unchecked `.unwrap()` on `next_char()` in `XmlParser`
-
-In `library/src/parser/xml_parser.rs`:
-- Line 336: `raw_text.push(self.source.next_char().unwrap());` (inside `parse_text`)
-- Line 353: `content.push(self.source.next_char().unwrap());` (inside `parse_cdata`)
-- Line 373: `comment.push(self.source.next_char().unwrap());` (inside `parse_comment`)
-- Line 398: `data.push(self.source.next_char().unwrap());` (inside `parse_pi`)
-- Line 434: `subset.push(self.source.next_char().unwrap());` (inside `parse_doctype`)
-
-**Root Cause**: Although `while !self.source.is_eof()` is checked at the top of loops, multi-character delimiters (e.g. `]]>`, `-->`, `?>`) peek ahead; if an input terminates abruptly (EOF) before a closing token, `next_char()` returns `None`, triggering an immediate panic.
-
-**Remediation**:
-- Replace every `.unwrap()` with `ok_or_else(|| XmlError::SyntaxError("Unexpected EOF while parsing ..."))?`.
-
----
-
-### 2.3 SEC-03: Quadratic Entity Expansion (Billion Laughs Size Exhaustion)
-
-In `library/src/entity/mapper.rs:64-79`:
-`EntityMapper` checks recursion depth against `max_depth` (default 512). However, an input with 30 nested entity levels (each doubling) requires only 30 recursion frames, yet expands to $2^{30} \approx 1\text{ GB}$ of RAM.
-
-**Root Cause**: Lack of an absolute or cumulative byte expansion limit across recursive expansions.
-
-**Remediation**:
-- Introduce `max_total_expansion_size: usize` (e.g. default 10 MB or configurable via `ParseOptions`).
-- Track cumulative characters/bytes emitted across all recursive steps; immediately return `XmlError::SecurityLimitExceeded` if exceeded.
-
----
-
-### 2.4 SEC-04: Unchecked Security Thresholds in `ParseOptions`
-
-In `library/src/options.rs`:
-- `max_xml_size` (100 MB default) is never checked in `XmlParser::parse` or `XmlSource::from_reader`.
-- `max_text_node_size` (1 MB default) is never checked in `parse_text` or `parse_cdata`.
-- `max_total_attribute_count` (1,000,000 default) is never verified in `parse_element`.
-
-**Root Cause**: The fields exist on `ParseOptions` as configuration placeholders, but the validation logic was not integrated into `XmlParser`.
-
-**Remediation**:
-- Implement helper methods: `check_xml_size`, `check_text_node_size`, `check_total_attribute_count`.
-- Call them at the respective accumulation points in `XmlParser`.
-
----
-
-### 2.5 SEC-05: Non-UTF-8 Boundary Slicing in `XmlSource::slice_range`
-
-In `library/src/io/source.rs:99-101`:
-```rust
-pub fn slice_range(&self, start: usize, end: usize) -> &str {
-    &self.content[start..end]
+pub fn append_child(&mut self, parent_id: NodeId, child_id: NodeId) -> Result<()> {
+    // ...
+    self.nodes[c_idx].parent = Some(parent_id);
+    self.nodes[p_idx].children.push(child_id);
+    Ok(())
 }
 ```
-
-**Root Cause**: Standard Rust string slicing panics if `start` or `end` does not fall on a Unicode scalar value boundary (`is_char_boundary`).
+If `parent_id == child_id` or `child_id` is an ancestor of `parent_id`, this creates a directed cycle in the DOM graph (`A -> B -> A`). When any traversal (`compact()`, `clone_node()`, `serialize()`) runs on this document, it traverses endlessly until crashing with a stack overflow.
 
 **Remediation**:
-- Verify `self.content.is_char_boundary(start) && self.content.is_char_boundary(end)` and `end <= self.content.len()`.
-- Return `Result<&str, XmlError>` or clamp safely to valid boundaries.
+1. Validate self-linking:
+   ```rust
+   if parent_id == child_id {
+       return Err(XmlError::NodeError("HierarchyRequestError: Cannot insert node into itself".into()));
+   }
+   ```
+2. Validate ancestor chain:
+   ```rust
+   let mut curr = Some(parent_id);
+   while let Some(ancestor_id) = curr {
+       if ancestor_id == child_id {
+           return Err(XmlError::NodeError("HierarchyRequestError: Cannot insert ancestor as child of descendant".into()));
+       }
+       curr = self.nodes[ancestor_id as usize].parent;
+   }
+   ```
+3. Apply this guard identically across `append_child`, `insert_before`, and `replace_child`.
 
 ---
 
-### 2.6 SEC-06: Silent `NodeId` Wrap-Around in `small_nodes` (u16)
+### 2.2 SEC2-02: Bounded Streaming I/O in `XmlSource::from_reader`
 
-In `library/src/document.rs:48`:
+**Problem**:
+In `library/src/io/source.rs`:
 ```rust
-pub fn add_node(&mut self, kind: NodeKind) -> NodeId {
-    let id = self.nodes.len() as NodeId;
-    self.nodes.push(NodeData::new(id, kind));
-    id
+#[cfg(feature = "std")]
+pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).map_err(|e| XmlError::Io(e.to_string()))?;
+    Self::from_bytes(&bytes)
 }
 ```
-
-**Root Cause**: When compiled with `features = ["small_nodes"]`, `NodeId` is `u16`. If more than 65,535 nodes are added, `self.nodes.len() as u16` silently truncates, creating duplicate `NodeId` values and creating circular DOM references.
+`read_to_end` will allocate indefinitely if given an infinite or multi-gigabyte stream.
 
 **Remediation**:
-- Add `const MAX_NODES: usize = NodeId::MAX as usize;` check.
-- Return `Result<NodeId>` or assert/fail cleanly with `XmlError::CapacityExceeded`.
+1. Introduce `from_reader_with_limit<R: std::io::Read>(reader: R, max_bytes: usize) -> Result<Self>`.
+2. Wrap `reader.take((max_bytes + 1) as u64)`.
+3. If the bytes read exceed `max_bytes`, return `Err(XmlError::SecurityLimitExceeded("Input stream exceeds max_xml_size limit"))`.
+4. Update `from_reader` to default to `50 * 1024 * 1024` (50 MB).
 
 ---
 
-### 2.7 SEC-07: XPath Numeric Conversion & Substring Overflow
+### 2.3 SEC2-03: Recursion Depth Limits in `XPathParser`
 
-In `library/src/xpath/evaluator.rs:520-538`:
-Converting negative or extreme `f64` values to `usize` for `substring(str, start, len)` can produce arithmetic panics or wrap-arounds in debug builds.
+**Problem**:
+`XPathParser` parses nested parentheses in `parse_primary_expr` by recursing:
+```rust
+Token::LeftParen => {
+    self.advance()?;
+    let expr = self.parse_expression()?;
+    // ...
+}
+```
+Adversarial input with thousands of nested parentheses (`((((...))))`) causes thread stack exhaustion.
 
 **Remediation**:
-- Saturate or safely clamp `start` and `len` using `saturating_add`.
-- Reject NaN / negative length arguments safely.
+1. Add `depth: usize` and `max_depth: usize` (default 128) to `XPathParser`.
+2. Increment `depth` on entering `parse_primary_expr` (parentheses) and nested sub-expressions.
+3. If `self.depth > self.max_depth`, return `Err(XmlError::XPathError("XPath expression exceeds maximum nesting depth (128)".into()))`.
 
 ---
 
-## 3. Concrete Phased Remediation Plan
+### 2.4 SEC2-04: Recursion Depth Limits in `XPathEvaluator`
+
+**Problem**:
+Evaluating complex filter expressions, recursive predicates, or custom functions can execute arbitrary call stack frames without limits.
+
+**Remediation**:
+1. Add `eval_depth: usize` and `const MAX_XPATH_EVAL_DEPTH: usize = 256;` to `XPathEvaluator`.
+2. Return `Err(XmlError::XPathError("XPath evaluation exceeded maximum recursion depth".into()))` if exceeded.
+3. Cap intermediate node-set allocations to prevent memory blowup during axis cross-products.
+
+---
+
+### 2.5 SEC2-05 & SEC2-06: Recursion Depth Limits in Validators & Serializers
+
+**Problem**:
+`DtdValidator::validate_element`, `XsdValidator::validate_element`, `XmlSerializer::serialize_children`, and `CanonicalSerializer::serialize_canonical_node` perform recursive descent through child nodes without depth tracking.
+
+**Remediation**:
+1. Enforce `const MAX_TRAVERSAL_DEPTH: usize = 512;` across `DtdValidator`, `XsdValidator`, `XmlSerializer`, and `CanonicalSerializer`.
+2. In serializers, if depth exceeds `MAX_TRAVERSAL_DEPTH`, abort cleanly with a descriptive error or stop recursion, preventing stack overflow crashes.
+
+---
+
+### 2.6 SEC2-07: Pull Parser Attribute Iterator Termination
+
+**Problem**:
+In `XmlPullAttributesIter::next()`, if an attribute has missing quotes or invalid formatting, `self.raw` is not advanced, leaving the iterator state ambiguous.
+
+**Remediation**:
+On syntax error or missing quote in `XmlPullAttributesIter::next()`, set `self.raw = ""` to ensure clean iterator exhaustion.
+
+---
+
+## 3. Concrete Phased Implementation Roadmap
 
 ```
 +-----------------------------------------------------------------------------+
 |                               PHASE 1                                       |
-|                  PANIC ELIMINATION & SAFE SLICING                           |
-| - Remove all .unwrap() in xml_parser.rs, entity/mapper.rs, document.rs     |
-| - Validate UTF-8 boundaries in XmlSource::slice_range                       |
+|                 DOM GRAPH HIERARCHY & CYCLE GUARDS                          |
+| - Prevent self-insertion in append_child, insert_before, replace_child      |
+| - Prevent ancestor-as-descendant cycle creation (HierarchyRequestError)    |
 +-----------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------+
 |                               PHASE 2                                       |
-|               DENIAL OF SERVICE & RESOURCE EXHAUSTION                       |
-| - Fix infinite loop in XmlPullParser for unclosed tags                      |
-| - Enforce max_xml_size, max_text_node_size, max_total_attribute_count       |
+|                     BOUNDED STREAMING I/O SOURCES                           |
+| - Implement from_reader_with_limit with reader.take(limit + 1)              |
+| - Enforce 50 MB default cap on XmlSource::from_reader                       |
 +-----------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------+
 |                               PHASE 3                                       |
-|                 ENTITY EXPANSION & XXE REINFORCEMENT                        |
-| - Add cumulative byte expansion limit in EntityMapper                       |
-| - Strictly enforce allow_external_entities in DOCTYPE and DTD parser        |
+|                   XPATH PARSER & EVALUATOR DEPTH CAPS                       |
+| - Add expression nesting depth limit (128) in XPathParser                   |
+| - Add evaluation recursion depth limit (256) in XPathEvaluator              |
 +-----------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------+
 |                               PHASE 4                                       |
-|               NUMERIC SAFETY & ARENA BOUNDARY GUARDS                        |
-| - Guard Document::add_node against u16 overflow in small_nodes              |
-| - Saturating arithmetic & NaN guards in XPath evaluator                     |
+|              VALIDATOR & SERIALIZER RECURSION GUARDS                        |
+| - Add 512-frame recursion limits to DtdValidator and XsdValidator          |
+| - Add depth limit guards to XmlSerializer and CanonicalSerializer           |
+| - Clean up XmlPullAttributesIter termination on malformed quotes            |
 +-----------------------------------------------------------------------------+
                                        |
                                        v
 +-----------------------------------------------------------------------------+
 |                               PHASE 5                                       |
-|                 STATIC SAFETY & ADVERSARIAL TESTING                         |
-| - Add #![forbid(unsafe_code)] to library/src/lib.rs                         |
-| - Implement adversarial test suite (fuzz testing / malformed corpus)        |
+|               SECURITY TEST SUITE EXTENSION & VERIFICATION                  |
+| - Add dedicated tests in tests/security_hardening.rs for all Phase 2 guards |
+| - Run cargo test --all-targets --all-features and cargo clippy              |
 +-----------------------------------------------------------------------------+
 ```
 
@@ -184,61 +184,51 @@ Converting negative or extreme `f64` values to `usize` for `substring(str, start
 
 ## 4. Phase-by-Phase Task Breakdown
 
-### Phase 1: Panic Elimination & Safe Character Slicing
-- [x] In `library/src/parser/xml_parser.rs`:
-  - [x] Replace `.unwrap()` on line 336 (`parse_text`) with `ok_or_else`.
-  - [x] Replace `.unwrap()` on line 353 (`parse_cdata`) with `ok_or_else`.
-  - [x] Replace `.unwrap()` on line 373 (`parse_comment`) with `ok_or_else`.
-  - [x] Replace `.unwrap()` on line 398 (`parse_pi`) with `ok_or_else`.
-  - [x] Replace `.unwrap()` on line 434 (`parse_doctype`) with `ok_or_else`.
-- [x] In `library/src/entity/mapper.rs`:
-  - [x] Replace line 141 `.chars().next().unwrap()` with safe `ok_or_else`.
+### Phase 1: DOM Graph Hierarchy & Cycle Guards
 - [x] In `library/src/document.rs`:
-  - [x] Replace line 503 `id_map[old_id].unwrap()` in `compact` with safe fallback.
+  - [x] Add `validate_hierarchy(&self, parent_id: NodeId, child_id: NodeId) -> Result<()>` helper.
+  - [x] In `append_child`: Call `self.validate_hierarchy(parent_id, child_id)?` before linking.
+  - [x] In `insert_before`: Call `self.validate_hierarchy(parent_id, new_child_id)?` before linking.
+  - [x] In `replace_child`: Call `self.validate_hierarchy(parent_id, new_child_id)?` before linking.
+
+### Phase 2: Bounded Streaming I/O Sources
 - [x] In `library/src/io/source.rs`:
-  - [x] Harden `slice_range(start, end)`: verify `is_char_boundary(start)` and `is_char_boundary(end)`. Return empty slice or safe clamp if invalid.
+  - [x] Implement `XmlSource::from_reader_with_limit<R: std::io::Read>(reader: R, max_bytes: usize) -> Result<Self>`.
+  - [x] Update `XmlSource::from_reader<R: std::io::Read>(reader: R) -> Result<Self>` to delegate to `from_reader_with_limit` using `50 * 1024 * 1024` (50 MB).
 
-### Phase 2: DoS & Resource Exhaustion Defense
-- [x] In `library/src/parser/pull_parser.rs`:
-  - [x] Address lines 244-248: When `remaining.starts_with('<')` and no tag closure `>` is present, emit `XmlError::SyntaxError("Unclosed tag at EOF")` instead of yielding 0-length text indefinitely.
-- [x] In `library/src/options.rs`:
-  - [x] Add `check_xml_size(&self, size: usize) -> Result<()>`
-  - [x] Add `check_text_node_size(&self, size: usize) -> Result<()>`
-  - [x] Add `check_total_attribute_count(&self, count: usize) -> Result<()>`
-- [x] In `library/src/parser/xml_parser.rs`:
-  - [x] Check `self.options.check_xml_size(self.source.len())` at the start of `XmlParser::parse`.
-  - [x] Check `self.options.check_text_node_size(raw_text.len())` inside `parse_text` and `parse_cdata`.
-  - [x] Check `self.options.check_total_attribute_count(self.total_attribute_count)` inside `parse_element`.
-- [x] In `library/src/io/source.rs`:
-  - [x] In `XmlSource::from_reader`: limit reader with `.take(max_size)` or check size during stream read.
-
-### Phase 3: Entity Expansion & XXE Hardening
-- [x] In `library/src/entity/mapper.rs`:
-  - [x] Add `max_total_expansion_size: usize` (default 10 MB, configurable).
-  - [x] Add a running counter of total expanded bytes across all entity replacements.
-  - [x] Return `XmlError::SecurityLimitExceeded` if total expanded bytes exceeds threshold.
-- [x] In `library/src/parser/xml_parser.rs`:
-  - [x] In `parse_doctype`: If `line.contains("SYSTEM")` or `line.contains("PUBLIC")` and `!self.options.allow_external_entities`, return `XmlError::SecurityLimitExceeded("External entity resolution forbidden by security policy")`.
-
-### Phase 4: Numeric Safety & Arena Graph Integrity
-- [x] In `library/src/document.rs`:
-  - [x] In `add_node`: Add check `if self.nodes.len() >= NodeId::MAX as usize { ... }`.
-  - [x] In `compact`: Add check before remapping `id_map`.
+### Phase 3: XPath Parser & Evaluator Depth Caps
+- [x] In `library/src/xpath/parser.rs`:
+  - [x] Add `depth: usize` and `const MAX_EXPR_DEPTH: usize = 128;` to `XPathParser`.
+  - [x] Increment/decrement depth in `parse_primary_expr` and return `XmlError::XPathError` on overflow.
 - [x] In `library/src/xpath/evaluator.rs`:
-  - [x] In `substring`: Sanitize `start` and `len` using `saturating_add`. If `start < 1` or `len <= 0`, return empty string.
-  - [x] In arithmetic operators (`+`, `-`, `*`, `div`, `mod`): ensure `f64::is_finite` or safe handling of NaN/Infinity without panicking.
-  - [x] Add maximum recursion depth check for nested XPath expressions.
+  - [x] Add `call_depth: usize` and `const MAX_EVAL_DEPTH: usize = 256;` to `XPathEvaluator`.
+  - [x] Check and return `XmlError::XPathError` if evaluation recursion exceeds 256 frames.
 
-### Phase 5: Static Safety Directives & Verification
-- [x] In `library/src/lib.rs`:
-  - [x] Add `#![forbid(unsafe_code)]` at crate root.
-- [x] Create test suite `tests/security_hardening.rs`:
-  - [x] Test 1: Unclosed CDATA, comments, PIs, and tags trigger clean `XmlError::SyntaxError` (no panic).
-  - [x] Test 2: Billion Laughs exponential entity bomb triggers `XmlError::SecurityLimitExceeded`.
-  - [x] Test 3: Extremely deep nesting triggers `max_nesting_depth` error without stack overflow.
-  - [x] Test 4: Giant text node triggers `max_text_node_size` error.
-  - [x] Test 5: Malformed pull parser input does not hang in infinite loop.
-  - [x] Test 6: XPath negative substring arguments do not cause overflow panic.
+### Phase 4: Validator & Serializer Recursion Guards
+- [x] In `library/src/dtd/validator.rs`:
+  - [x] Add recursion depth parameter to `validate_element` and `collect_ids_and_idrefs` (limit 512).
+- [x] In `library/src/xsd/validator.rs`:
+  - [x] Add recursion depth parameter to `validate_element` (limit 512).
+- [x] In `library/src/stringify/serializer.rs`:
+  - [x] Guard `serialize_node` with max indent / nesting level (limit 512).
+- [x] In `library/src/stringify/canonical.rs`:
+  - [x] Guard `serialize_canonical_node` with recursion depth parameter (limit 512).
+- [x] In `library/src/parser/pull_parser.rs`:
+  - [x] On quote mismatch or malformed attribute in `XmlPullAttributesIter::next`, reset `self.raw = ""` to prevent repeat iteration.
+
+### Phase 5: Security Test Suite Extension & Verification
+- [x] In `library/tests/security_hardening.rs`:
+  - [x] Test 1: Self-insertion cycle rejection in `append_child`.
+  - [x] Test 2: Ancestor-to-descendant cycle rejection in `append_child` and `insert_before`.
+  - [x] Test 3: Unbounded stream rejection in `XmlSource::from_reader_with_limit`.
+  - [x] Test 4: Deeply nested XPath parentheses rejection (`1000` opening parentheses).
+  - [x] Test 5: Deeply nested validation depth rejection in `DtdValidator` and `XsdValidator`.
+  - [x] Test 6: Deeply nested tree serialization depth guard.
+- [x] Run full test suite:
+  - [x] `cargo test --test security_hardening`
+  - [x] `cargo test --doc --all-features`
+  - [x] `cargo test --all-targets --all-features`
+  - [x] `cargo clippy --all-targets --all-features`
 
 ---
 
@@ -246,10 +236,8 @@ Converting negative or extreme `f64` values to `usize` for `substring(str, start
 
 | Metric | Target | Verification Method |
 | :--- | :--- | :--- |
-| **Panic Freedom** | 0 panics on arbitrary malformed inputs | Automated adversarial unit test suite |
-| **Unsafe Code** | 0 lines of `unsafe` code | Compiler enforced via `#![forbid(unsafe_code)]` |
-| **Billion Laughs Guard** | Max RAM usage capped at configured threshold | Memory-capped expansion test |
-| **DoSTermination** | Parsing terminates in finite time for all inputs | Timeout-bounded integration tests |
-| **Backward Compatibility** | 100% existing tests pass | `cargo test --all-targets --all-features` |
-| **Doctest Integrity** | 100% doctests pass | `cargo test --doc --all-features` |
-| **Documentation & Clippy** | 0 clippy warnings | `cargo clippy --all-targets --all-features` |
+| **DOM Cycle Freedom** | 0 circular references possible via mutation APIs | Unit test asserting `HierarchyRequestError` |
+| **Stream Allocation Bound** | Stream reads strictly capped at `max_xml_size` | Infinite reader mock test (`std::io::repeat(b'x')`) |
+| **XPath Recursion Safety** | 0 stack overflows on arbitrary query nesting | `((((... 1000 levels ...))))` parser test |
+| **Traversal Recursion Safety** | 0 stack overflows on 10,000-deep DOM validation | Deeply nested XML validation tests |
+| **100% Backward Compatibility** | All 22 test suites and 18 examples pass | `cargo test --all-targets --all-features` |

@@ -77,11 +77,30 @@ impl XmlSource {
         Self::from_bytes(&bytes)
     }
 
-    /// Reads all bytes from an arbitrary `std::io::Read` stream into an `XmlSource`.
+    /// Default maximum byte limit for streaming readers (50 MB).
     #[cfg(feature = "std")]
-    pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self> {
+    pub const DEFAULT_MAX_STREAM_SIZE: usize = 50 * 1024 * 1024;
+
+    /// Reads all bytes from an arbitrary `std::io::Read` stream into an `XmlSource`,
+    /// enforcing the default safety limit of 50 MB to prevent unbounded memory allocation.
+    #[cfg(feature = "std")]
+    pub fn from_reader<R: std::io::Read>(reader: R) -> Result<Self> {
+        Self::from_reader_with_limit(reader, Self::DEFAULT_MAX_STREAM_SIZE)
+    }
+
+    /// Reads all bytes from an arbitrary `std::io::Read` stream up to `max_bytes`.
+    /// Returns [`XmlError::SecurityLimitExceeded`] if the stream exceeds `max_bytes`.
+    #[cfg(feature = "std")]
+    pub fn from_reader_with_limit<R: std::io::Read>(mut reader: R, max_bytes: usize) -> Result<Self> {
+        use std::io::Read;
         let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).map_err(|e| XmlError::Io(e.to_string()))?;
+        let mut limited = (&mut reader).take((max_bytes + 1) as u64);
+        limited.read_to_end(&mut bytes).map_err(|e| XmlError::Io(e.to_string()))?;
+        if bytes.len() > max_bytes {
+            return Err(XmlError::SecurityLimitExceeded(
+                "Input stream exceeds maximum allowed XML stream size".into(),
+            ));
+        }
         Self::from_bytes(&bytes)
     }
 

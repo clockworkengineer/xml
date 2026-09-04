@@ -219,13 +219,16 @@ impl DtdValidator {
         self.validate_doc(doc)
     }
 
+    /// Maximum element nesting depth allowed during validation (512 frames).
+    pub const MAX_VALIDATION_DEPTH: usize = 512;
+
     fn validate_doc(&self, doc: &Document) -> Result<()> {
         let mut id_set = HashMap::new();
         let mut idref_list = Vec::new();
 
         if let Some(root_elem_id) = doc.root_element_id() {
-            self.collect_ids_and_idrefs(doc, root_elem_id, &mut id_set, &mut idref_list)?;
-            self.validate_element(doc, root_elem_id)?;
+            self.collect_ids_and_idrefs(doc, root_elem_id, &mut id_set, &mut idref_list, 0)?;
+            self.validate_element(doc, root_elem_id, 0)?;
         }
 
         for (ref_val, elem_name, attr_name) in idref_list {
@@ -245,7 +248,14 @@ impl DtdValidator {
         elem_id: NodeId,
         id_set: &mut HashMap<String, NodeId>,
         idref_list: &mut Vec<(String, String, String)>,
+        depth: usize,
     ) -> Result<()> {
+        if depth > Self::MAX_VALIDATION_DEPTH {
+            return Err(XmlError::DtdError(
+                "Document exceeds maximum validation nesting depth (512)".into(),
+            ));
+        }
+
         if let Some(node) = doc.get_node(elem_id) {
             if let NodeKind::Element { name, attributes } = &node.kind {
                 if let Some(attr_rules) = self.attributes.get(&**name) {
@@ -274,7 +284,7 @@ impl DtdValidator {
             for &child_id in &node.children {
                 if let Some(child) = doc.get_node(child_id) {
                     if matches!(child.kind, NodeKind::Element { .. }) {
-                        self.collect_ids_and_idrefs(doc, child_id, id_set, idref_list)?;
+                        self.collect_ids_and_idrefs(doc, child_id, id_set, idref_list, depth + 1)?;
                     }
                 }
             }
@@ -282,7 +292,12 @@ impl DtdValidator {
         Ok(())
     }
 
-    fn validate_element(&self, doc: &Document, elem_id: NodeId) -> Result<()> {
+    fn validate_element(&self, doc: &Document, elem_id: NodeId, depth: usize) -> Result<()> {
+        if depth > Self::MAX_VALIDATION_DEPTH {
+            return Err(XmlError::DtdError(
+                "Document exceeds maximum validation nesting depth (512)".into(),
+            ));
+        }
         let node = doc
             .get_node(elem_id)
             .ok_or_else(|| XmlError::DtdError("Invalid node".into()))?;
@@ -351,7 +366,7 @@ impl DtdValidator {
             for &child_id in &node.children {
                 if let Some(child) = doc.get_node(child_id) {
                     if matches!(child.kind, NodeKind::Element { .. }) {
-                        self.validate_element(doc, child_id)?;
+                        self.validate_element(doc, child_id, depth + 1)?;
                     }
                 }
             }

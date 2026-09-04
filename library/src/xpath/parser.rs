@@ -11,14 +11,22 @@ use crate::xpath::lexer::{Token, XPathLexer};
 pub struct XPathParser<'a> {
     lexer: XPathLexer<'a>,
     current: Token,
+    depth: usize,
 }
 
 impl<'a> XPathParser<'a> {
+    /// Maximum nesting depth for nested expressions / sub-queries (128 frames).
+    pub const MAX_EXPR_DEPTH: usize = 128;
+
     /// Instantiates a new [`XPathParser`] for an XPath expression string slice.
     pub fn new(input: &'a str) -> Result<Self> {
         let mut lexer = XPathLexer::new(input);
         let current = lexer.next_token()?;
-        Ok(Self { lexer, current })
+        Ok(Self {
+            lexer,
+            current,
+            depth: 0,
+        })
     }
 
     fn advance(&mut self) -> Result<Token> {
@@ -27,9 +35,26 @@ impl<'a> XPathParser<'a> {
         Ok(prev)
     }
 
+    fn enter_depth(&mut self) -> Result<()> {
+        if self.depth >= Self::MAX_EXPR_DEPTH {
+            return Err(XmlError::XPathError(
+                "XPath expression exceeds maximum nesting depth (128)".into(),
+            ));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    fn leave_depth(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+    }
+
     /// Parses the top-level XPath expression into an [`XPathExpr`] AST.
     pub fn parse_expression(&mut self) -> Result<XPathExpr> {
-        self.parse_or_expr()
+        self.enter_depth()?;
+        let res = self.parse_or_expr();
+        self.leave_depth();
+        res
     }
 
     fn parse_or_expr(&mut self) -> Result<XPathExpr> {

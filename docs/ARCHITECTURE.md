@@ -215,3 +215,30 @@ The `serde_impl` module provides a DOM-backed `Deserializer` and `Serializer`:
 - **Structural Visitor**: `NodeDeserializer` wraps the current `Document` and `NodeId`. If the node contains child elements or attributes, it presents itself as a `MapAccess` (mapping tag names and attribute keys to values). If the node contains pure character data, it presents itself as a primitive scalar (`i64`, `u64`, `f64`, `bool`, `String`).
 - **Sequences**: Sibling elements sharing identical tag names are visited sequentially via `ElementSeqAccess`.
 - **Streaming Output**: `XmlSerWriter` serializes struct fields into matching open/close tags with automatic XML entity escaping.
+
+---
+
+## 11. Security Hardening & Threat Mitigation Model
+
+The library implements defense-in-depth measures against untrusted XML payloads:
+
+1. **Static Memory Safety**:
+   - The crate enforces `#![forbid(unsafe_code)]` unconditionally.
+   - Character slicing via `XmlSource::slice_range` validates UTF-8 boundaries with `is_char_boundary()` to prevent panics on multibyte Unicode code points.
+
+2. **Denial of Service (DoS) Protections**:
+   - `max_xml_size` (default 50 MB): Rejects oversized XML inputs prior to or during parsing.
+   - `max_text_node_size` (default 10 MB): Clamps individual text / CDATA nodes against memory exhaustion.
+   - `max_total_attribute_count` (default 100,000): Enforces global attribute caps across the document tree.
+   - `max_element_depth` (default 512): Blocks deeply nested elements from exhausting the call stack.
+   - `max_element_count` (default 1,000,000): Guards against unbounded arena allocations.
+   - `XmlPullParser` loop defense: Rejects unclosed markup tags before advancing to prevent infinite loops.
+
+3. **Entity Expansion & XXE Mitigations**:
+   - **Billion Laughs / Exponential Blowup**: `max_total_entity_expansion_size` (default 10 MB) tracks cumulative expanded bytes across recursive entities in `EntityMapper`, blocking attacks before memory exhaustion.
+   - **XXE Prevention**: Strict `allow_external_entities = false` prevents parsing of `SYSTEM` or `PUBLIC` external DTD entities by default.
+
+4. **Numeric Safety & Node Capacity**:
+   - `Document::add_node` enforces `arena.len() < NodeId::MAX as usize`, returning a descriptive error rather than overflowing or truncating node indices.
+   - XPath string functions (`substring`, etc.) use saturating arithmetic (`saturating_add`, `saturating_sub`) and bounds clamping against negative indices or NaN values.
+

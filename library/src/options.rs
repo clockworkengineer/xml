@@ -22,6 +22,8 @@ pub struct ParseOptions {
     pub max_total_attribute_count: usize,
     /// Maximum text node character size (default: 1 MB).
     pub max_text_node_size: usize,
+    /// Maximum total cumulative entity expansion size in bytes (default: 10 MB, Billion Laughs guard).
+    pub max_total_entity_expansion_size: usize,
     /// Allow fetching external entity URIs (default: false for XXE protection).
     pub allow_external_entities: bool,
 }
@@ -36,6 +38,7 @@ impl Default for ParseOptions {
             max_attribute_count: 10_000,
             max_total_attribute_count: 1_000_000,
             max_text_node_size: 1024 * 1024,
+            max_total_entity_expansion_size: 10 * 1024 * 1024,
             allow_external_entities: false,
         }
     }
@@ -77,4 +80,41 @@ impl ParseOptions {
             Ok(())
         }
     }
+
+    /// Validates total attribute count across document against `max_total_attribute_count`.
+    pub fn check_total_attribute_count(&self, count: usize) -> Result<()> {
+        if count > self.max_total_attribute_count {
+            Err(XmlError::SecurityLimitExceeded(format!(
+                "Maximum total attribute count of {} exceeded",
+                self.max_total_attribute_count
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates overall XML document size against `max_xml_size`.
+    pub fn check_xml_size(&self, size: usize) -> Result<()> {
+        if size > self.max_xml_size {
+            Err(XmlError::SecurityLimitExceeded(format!(
+                "Maximum XML document size of {} bytes exceeded (found {})",
+                self.max_xml_size, size
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates character size of a text/CDATA node against `max_text_node_size`.
+    pub fn check_text_node_size(&self, size: usize) -> Result<()> {
+        if size > self.max_text_node_size {
+            Err(XmlError::SecurityLimitExceeded(format!(
+                "Maximum text node size of {} characters exceeded (found {})",
+                self.max_text_node_size, size
+            )))
+        } else {
+            Ok(())
+        }
+    }
 }
+

@@ -24,7 +24,10 @@ pub struct XmlParser<'a> {
 impl<'a> XmlParser<'a> {
     /// Instantiates a new [`XmlParser`] with an input source and parse options.
     pub fn new(source: XmlSource, options: ParseOptions) -> Self {
-        let mapper = EntityMapper::new(options.max_entity_expansion_depth);
+        let mapper = EntityMapper::with_limits(
+            options.max_entity_expansion_depth,
+            options.max_total_entity_expansion_size,
+        );
         Self {
             source,
             options,
@@ -37,6 +40,7 @@ impl<'a> XmlParser<'a> {
 
     /// Parses the entire input source into a DOM [`Document`].
     pub fn parse(&mut self) -> Result<Document> {
+        self.options.check_xml_size(self.source.len())?;
         let mut doc = Document::new();
 
         self.source.skip_whitespace();
@@ -195,6 +199,7 @@ impl<'a> XmlParser<'a> {
 
             self.total_attribute_count += 1;
             self.options.check_attribute_count(attributes.len())?;
+            self.options.check_total_attribute_count(self.total_attribute_count)?;
 
             self.source.skip_whitespace();
         }
@@ -333,7 +338,13 @@ impl<'a> XmlParser<'a> {
                     col: self.source.col(),
                 });
             }
-            raw_text.push(self.source.next_char().unwrap());
+            let ch = self.source.next_char().ok_or_else(|| XmlError::SyntaxError {
+                message: "Unexpected EOF while reading text".into(),
+                line: self.source.line(),
+                col: self.source.col(),
+            })?;
+            raw_text.push(ch);
+            self.options.check_text_node_size(raw_text.len())?;
         }
 
         let expanded = self.entity_mapper.expand(&raw_text)?;
@@ -350,7 +361,13 @@ impl<'a> XmlParser<'a> {
                 self.source.consume("]]>");
                 return Ok(doc.add_node(NodeKind::CData(content.into_boxed_str())));
             }
-            content.push(self.source.next_char().unwrap());
+            let ch = self.source.next_char().ok_or_else(|| XmlError::SyntaxError {
+                message: "Unterminated CDATA section".into(),
+                line: self.source.line(),
+                col: self.source.col(),
+            })?;
+            content.push(ch);
+            self.options.check_text_node_size(content.len())?;
         }
 
         Err(XmlError::SyntaxError {
@@ -370,7 +387,12 @@ impl<'a> XmlParser<'a> {
                 self.source.consume("-->");
                 return Ok(doc.add_node(NodeKind::Comment(comment.into_boxed_str())));
             }
-            comment.push(self.source.next_char().unwrap());
+            let ch = self.source.next_char().ok_or_else(|| XmlError::SyntaxError {
+                message: "Unterminated XML comment".into(),
+                line: self.source.line(),
+                col: self.source.col(),
+            })?;
+            comment.push(ch);
         }
 
         Err(XmlError::SyntaxError {
@@ -395,7 +417,12 @@ impl<'a> XmlParser<'a> {
                     data: data.into_boxed_str(),
                 }));
             }
-            data.push(self.source.next_char().unwrap());
+            let ch = self.source.next_char().ok_or_else(|| XmlError::SyntaxError {
+                message: "Unterminated processing instruction".into(),
+                line: self.source.line(),
+                col: self.source.col(),
+            })?;
+            data.push(ch);
         }
 
         Err(XmlError::SyntaxError {
@@ -431,7 +458,12 @@ impl<'a> XmlParser<'a> {
         if self.source.consume("[") {
             let mut subset = String::new();
             while !self.source.is_eof() && !self.source.starts_with("]") {
-                subset.push(self.source.next_char().unwrap());
+                let ch = self.source.next_char().ok_or_else(|| XmlError::SyntaxError {
+                    message: "Unterminated DOCTYPE subset".into(),
+                    line: self.source.line(),
+                    col: self.source.col(),
+                })?;
+                subset.push(ch);
             }
             self.source.consume("]");
             internal_subset = Some(subset);
@@ -454,6 +486,11 @@ impl<'a> XmlParser<'a> {
                     let parts: Vec<&str> = trimmed.split_whitespace().collect();
                     if parts.len() >= 3 {
                         let ent_name = parts[1];
+                        if (trimmed.contains("SYSTEM") || trimmed.contains("PUBLIC")) && !self.options.allow_external_entities {
+                            return Err(XmlError::SecurityLimitExceeded(
+                                "External entity references in DOCTYPE are forbidden by security policy".into(),
+                            ));
+                        }
                         let raw_val = parts[2..].join(" ");
                         let val = raw_val.trim_matches(|c| c == '"' || c == '\'' || c == '>');
                         self.entity_mapper.register(ent_name, val);

@@ -63,6 +63,10 @@ impl Document {
 
     /// Appends a new node kind to the arena and returns its unique [`NodeId`].
     pub fn add_node(&mut self, kind: NodeKind) -> NodeId {
+        assert!(
+            self.nodes.len() < (NodeId::MAX as usize),
+            "Document arena capacity exceeded for configured NodeId size"
+        );
         let id = self.nodes.len() as NodeId;
         self.nodes.push(NodeData::new(id, kind));
         id
@@ -492,6 +496,9 @@ impl Document {
 
         for (old_idx, &is_reachable) in reachable.iter().enumerate() {
             if is_reachable {
+                if new_nodes.len() >= (NodeId::MAX as usize) {
+                    return Err(XmlError::NodeError("Compacted arena exceeds NodeId capacity".into()));
+                }
                 let new_id = new_nodes.len() as NodeId;
                 id_map[old_idx] = Some(new_id);
                 new_nodes.push(self.nodes[old_idx].clone());
@@ -500,7 +507,9 @@ impl Document {
 
         for node in &mut new_nodes {
             let old_id = node.id as usize;
-            node.id = id_map[old_id].unwrap();
+            if let Some(Some(remapped)) = id_map.get(old_id) {
+                node.id = *remapped;
+            }
             node.parent = node.parent.and_then(|p| id_map.get(p as usize).copied().flatten());
             node.children = node
                 .children

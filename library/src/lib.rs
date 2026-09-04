@@ -8,6 +8,7 @@
 //! - XSD Schema & Restriction Facet Validation (`XsdValidator`)
 //! - XPath 1.0 Lexing, Parsing, and Evaluation Engine (`XPathEngine`)
 
+#![forbid(unsafe_code)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #[cfg(feature = "alloc")]
 extern crate alloc;

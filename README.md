@@ -23,7 +23,7 @@ A high-performance, full-featured, pure Rust XML parsing, validation, stringific
   - **XSD**: Complex types (`<xs:complexType>`), compositor groups (`<xs:sequence>`, `<xs:choice>`, `<xs:all>`), attribute definitions (`<xs:attribute>`), `minOccurs`/`maxOccurs` bounds, and facet restrictions (`minInclusive`, `maxInclusive`, `minLength`, `maxLength`, `enumeration`, `pattern`).
 - **Serde Serialization & Deserialization**: Optional `features = ["serde"]` for seamless bidirectional mapping between Rust structs and XML (`from_str`, `to_string`).
 - **Streaming I/O & Encodings**: Streaming parser reading from any `std::io::Read` stream (`parse_reader`), with auto-detection for UTF-8/UTF-16 BOM and decoders for ISO-8859-1 (Latin-1), Windows-1252 (CP1252), and 7-bit US-ASCII.
-- **XXE & DoS Protection**: Built-in security limits (`ParseOptions`) restricting entity reference expansion depth (preventing XML Bomb / Billion Laughs attacks), element nesting depth, total element count, and max attributes per tag.
+- **Security & DoS Protection**: Hardened parser (`#![forbid(unsafe_code)]`) with configurable security limits (`ParseOptions`) restricting cumulative entity expansion size (blocking Billion Laughs / quadratic blowup attacks), external entity resolution (XXE prevention), maximum XML payload size, single text node size, total attribute count, element nesting depth, and arena node capacity.
 
 ---
 
@@ -186,6 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - [Embedded & Microcontroller Guide](docs/EMBEDDED_DEVELOPMENT.md) - `#![no_std]`, `small_nodes`, pull parsing, and arena compaction
 
 ### Architectural & Refactor Plans
+- [Code Hardening & Security Plan](docs/code_hardening_plan.md)
 - [Documentation Expansion & Codebase Plan](docs/documentation_expansion_plan.md)
 - [Missing Features & Full W3C/XPath Specification Refactor Plan](docs/missing_features_refactor_plan.md)
 - [Optimization & Performance Refactor Plan](docs/advanced_refactor_plan.md)

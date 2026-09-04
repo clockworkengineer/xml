@@ -121,7 +121,7 @@ impl<'a> XPathParser<'a> {
     }
 
     fn parse_multiplicative_expr(&mut self) -> Result<XPathExpr> {
-        let mut left = self.parse_path_expr()?;
+        let mut left = self.parse_unary_expr()?;
         while matches!(
             self.current,
             Token::Star | Token::Name(_)
@@ -133,7 +133,7 @@ impl<'a> XPathParser<'a> {
                 Token::Name(n) if n == "mod" => XPathOperator::Mod,
                 _ => break,
             };
-            let right = self.parse_path_expr()?;
+            let right = self.parse_unary_expr()?;
             left = XPathExpr::BinaryOp {
                 op,
                 left: Box::new(left),
@@ -141,6 +141,19 @@ impl<'a> XPathParser<'a> {
             };
         }
         Ok(left)
+    }
+
+    fn parse_unary_expr(&mut self) -> Result<XPathExpr> {
+        if self.current == Token::Minus {
+            self.advance()?;
+            let operand = self.parse_unary_expr()?;
+            return Ok(XPathExpr::BinaryOp {
+                op: XPathOperator::Minus,
+                left: Box::new(XPathExpr::LiteralNumber(0.0)),
+                right: Box::new(operand),
+            });
+        }
+        self.parse_path_expr()
     }
 
     fn parse_path_expr(&mut self) -> Result<XPathExpr> {

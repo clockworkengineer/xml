@@ -19,11 +19,12 @@ pub const PREDEFINED_ENTITIES: &[(&str, &str)] = &[
     ("apos", "'"),
 ];
 
-/// Entity table mapping entity reference names to replacement text with depth recursion tracking.
+/// Entity table mapping entity reference names to replacement text with depth recursion and byte size tracking.
 #[derive(Debug, Clone)]
 pub struct EntityMapper {
     entities: HashMap<String, String>,
     max_depth: usize,
+    max_expansion_size: usize,
 }
 
 impl Default for EntityMapper {
@@ -35,6 +36,7 @@ impl Default for EntityMapper {
         Self {
             entities: map,
             max_depth: 512,
+            max_expansion_size: 10 * 1024 * 1024,
         }
     }
 }
@@ -44,6 +46,14 @@ impl EntityMapper {
     pub fn new(max_depth: usize) -> Self {
         let mut s = Self::default();
         s.max_depth = max_depth;
+        s
+    }
+
+    /// Instantiates a new [`EntityMapper`] with custom recursion depth and total expansion size limits.
+    pub fn with_limits(max_depth: usize, max_expansion_size: usize) -> Self {
+        let mut s = Self::default();
+        s.max_depth = max_depth;
+        s.max_expansion_size = max_expansion_size;
         s
     }
 
@@ -60,15 +70,16 @@ impl EntityMapper {
     /// Expands entity references and numeric character references within input string slice.
     ///
     /// # Errors
-    /// Returns [`XmlError::SecurityLimitExceeded`] if expansion depth exceeds `max_depth` (XML bomb guard).
+    /// Returns [`XmlError::SecurityLimitExceeded`] if expansion depth or total expansion size exceeds configured thresholds (XML bomb guard).
     pub fn expand(&self, input: &str) -> Result<String> {
         if !input.contains('&') {
             return Ok(input.to_string());
         }
-        self.expand_with_depth(input, 0)
+        let mut total_expanded = 0;
+        self.expand_with_depth(input, 0, &mut total_expanded)
     }
 
-    fn expand_with_depth(&self, input: &str, depth: usize) -> Result<String> {
+    fn expand_with_depth(&self, input: &str, depth: usize, total_expanded: &mut usize) -> Result<String> {
         if depth > self.max_depth {
             return Err(XmlError::SecurityLimitExceeded(
                 "Maximum entity expansion depth exceeded (possible XML Bomb/Billion Laughs)".into(),
@@ -97,6 +108,13 @@ impl EntityMapper {
                         match codepoint {
                             Ok(cp) => {
                                 if let Some(ch) = char::from_u32(cp) {
+                                    *total_expanded += ch.len_utf8();
+                                    if *total_expanded > self.max_expansion_size {
+                                        return Err(XmlError::SecurityLimitExceeded(format!(
+                                            "Maximum cumulative entity expansion size of {} bytes exceeded",
+                                            self.max_expansion_size
+                                        )));
+                                    }
                                     result.push(ch);
                                 } else {
                                     return Err(XmlError::EntityError(format!(
@@ -113,14 +131,14 @@ impl EntityMapper {
                     } else {
                         // Named reference
                         match entity_ref {
-                            "lt" => result.push('<'),
-                            "gt" => result.push('>'),
-                            "amp" => result.push('&'),
-                            "quot" => result.push('"'),
-                            "apos" => result.push('\''),
+                            "lt" => { *total_expanded += 1; result.push('<'); }
+                            "gt" => { *total_expanded += 1; result.push('>'); }
+                            "amp" => { *total_expanded += 1; result.push('&'); }
+                            "quot" => { *total_expanded += 1; result.push('"'); }
+                            "apos" => { *total_expanded += 1; result.push('\''); }
                             _ => {
                                 if let Some(val) = self.entities.get(entity_ref) {
-                                    let expanded_val = self.expand_with_depth(val, depth + 1)?;
+                                    let expanded_val = self.expand_with_depth(val, depth + 1, total_expanded)?;
                                     result.push_str(&expanded_val);
                                 } else {
                                     return Err(XmlError::EntityError(format!(
@@ -128,6 +146,12 @@ impl EntityMapper {
                                     )));
                                 }
                             }
+                        }
+                        if *total_expanded > self.max_expansion_size {
+                            return Err(XmlError::SecurityLimitExceeded(format!(
+                                "Maximum cumulative entity expansion size of {} bytes exceeded",
+                                self.max_expansion_size
+                            )));
                         }
                     }
 
@@ -138,7 +162,16 @@ impl EntityMapper {
                     ));
                 }
             } else {
-                let ch = input[pos..].chars().next().unwrap();
+                let ch = input[pos..].chars().next().ok_or_else(|| {
+                    XmlError::EntityError("Unexpected EOF reading character in entity expansion".into())
+                })?;
+                *total_expanded += ch.len_utf8();
+                if *total_expanded > self.max_expansion_size {
+                    return Err(XmlError::SecurityLimitExceeded(format!(
+                        "Maximum cumulative entity expansion size of {} bytes exceeded",
+                        self.max_expansion_size
+                    )));
+                }
                 result.push(ch);
                 pos += ch.len_utf8();
             }

@@ -96,8 +96,20 @@ impl XmlSource {
     }
 
     /// Returns a string slice of the underlying content for a given byte range.
+    /// Safely clamps and validates character boundaries to prevent indexing panics.
     pub fn slice_range(&self, start: usize, end: usize) -> &str {
-        &self.content[start..end]
+        let max_len = self.content.len();
+        let s = start.min(max_len);
+        let e = end.min(max_len);
+        if s > e || !self.content.is_char_boundary(s) || !self.content.is_char_boundary(e) {
+            return "";
+        }
+        &self.content[s..e]
+    }
+
+    /// Returns the total byte length of the underlying XML content.
+    pub fn len(&self) -> usize {
+        self.content.len()
     }
 
     /// Returns the current 1-based line number.

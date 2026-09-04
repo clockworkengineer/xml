@@ -241,8 +241,19 @@ impl<'a> XmlPullParser<'a> {
             }
         }
 
+        if remaining.starts_with('<') {
+            return Err(crate::error::XmlError::SyntaxError {
+                message: "Unclosed XML markup or tag at EOF".into(),
+                line: 1,
+                col: 1,
+            });
+        }
+
         // Text content up to next '<'
         let next_tag = remaining.find('<').unwrap_or(remaining.len());
+        if next_tag == 0 {
+            return Ok(None);
+        }
         let text = &remaining[..next_tag];
         self.pos += next_tag;
         Ok(Some(XmlPullEvent::Text(text)))

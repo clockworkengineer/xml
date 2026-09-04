@@ -521,18 +521,26 @@ impl<'a> XPathEvaluator<'a> {
                     return Err(XmlError::XPathError("substring() expects 2 or 3 arguments".into()));
                 }
                 let s = self.to_string(&self.evaluate_internal(&args[0], ctx, pos, size)?);
-                let start_idx = self.to_number(&self.evaluate_internal(&args[1], ctx, pos, size)?) as i64 - 1;
+                let raw_start = self.to_number(&self.evaluate_internal(&args[1], ctx, pos, size)?);
+                if raw_start.is_nan() || raw_start < 1.0 {
+                    return Ok(XPathValue::String(String::new()));
+                }
+                let start_idx = (raw_start as i64) - 1;
                 let chars: Vec<char> = s.chars().collect();
                 if start_idx < 0 || (start_idx as usize) >= chars.len() {
                     return Ok(XPathValue::String(String::new()));
                 }
                 let start = start_idx as usize;
                 let len = if args.len() == 3 {
-                    self.to_number(&self.evaluate_internal(&args[2], ctx, pos, size)?) as usize
+                    let raw_len = self.to_number(&self.evaluate_internal(&args[2], ctx, pos, size)?);
+                    if raw_len.is_nan() || raw_len <= 0.0 {
+                        return Ok(XPathValue::String(String::new()));
+                    }
+                    raw_len as usize
                 } else {
-                    chars.len() - start
+                    chars.len().saturating_sub(start)
                 };
-                let end = (start + len).min(chars.len());
+                let end = start.saturating_add(len).min(chars.len());
                 let sub: String = chars[start..end].iter().collect();
                 Ok(XPathValue::String(sub))
             }
